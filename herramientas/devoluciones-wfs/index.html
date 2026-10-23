@@ -154,6 +154,29 @@ td .sku { font-size: 11px; color: var(--muted); font-family: var(--font-num); }
 .box li input { margin: 2px 0 0; }
 .box .acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .box .note { font-size: 11px; color: var(--warn); }
+.box li .ubtns { display: inline-flex; gap: 4px; }
+.box li.got .t { color: var(--ok); }
+.box li.lost .t { color: var(--bad); text-decoration: line-through; }
+
+/* Productos */
+.thumb { width: 56px; height: 56px; border-radius: 4px; background: var(--bg-soft); border: 0.5px solid var(--line); object-fit: contain; flex: none; display: grid; place-items: center; font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.04em; overflow: hidden; }
+.thumb.lg { width: 120px; height: 120px; font-size: 14px; }
+.thumb img { width: 100%; height: 100%; object-fit: contain; }
+.prods { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.prod { border: 0.5px solid var(--line); border-radius: 4px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; background: var(--bg); text-align: left; min-width: 0; }
+.prod:hover { border-color: var(--muted); }
+.prod-top { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.prod-top .nm { font-size: 13px; font-weight: 500; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.prod .pend { font-family: var(--font-num); font-size: 22px; font-weight: 500; }
+.prod dl { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; margin: 0; font-size: 12px; }
+.prod dt { color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.prod dd { margin: 0; font-family: var(--font-num); text-align: right; }
+.incoming { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+.inc { border: 0.5px solid var(--line); border-radius: 4px; padding: 12px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
+.inc h3 { font-size: 14px; font-weight: 600; margin: 0; }
+.inc ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.inc li { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; font-size: 12px; padding-top: 6px; border-top: 0.5px solid var(--line); }
+.countdown { font-size: 11px; font-family: var(--font-num); }
 
 /* Reclamos */
 .claim-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
@@ -266,6 +289,7 @@ const Core = (() => {
     if (/^\d{5}(\.\d+)?$/.test(s)) { const d = new Date(Math.round((parseFloat(s) - 25569) * 864e5)); return d.toISOString().slice(0, 10); }
     return '';
   };
+  const uid = (k) => 'u-' + String(k).replace(/[^A-Za-z0-9_\-.~:@+]/g, '~');
   const days = (from, today) => from ? Math.round((Date.parse(today) - Date.parse(from)) / 864e5) : null;
 
   function parseCSV(text) {
@@ -386,7 +410,7 @@ const Core = (() => {
   };
   const BUCKETS = {
     recuperar:  { label: 'Por reclamar', color: 'var(--bad)', desc: 'No llegaron o no te llegaron' },
-    confirmar:  { label: 'Por confirmar', color: 'var(--warn)', desc: 'Walmart dice que te las mandó' },
+    confirmar:  { label: 'Por llegarte', color: 'var(--warn)', desc: 'Walmart dice que te las mandó' },
     camino:     { label: 'En camino', color: 'var(--accent)', desc: 'El cliente aún no la entrega' },
     cubre:      { label: 'Walmart la cubre', color: 'color-mix(in srgb, var(--accent) 45%, var(--bg))', desc: 'Culpa de WFS, no es pérdida tuya' },
     recuperado: { label: 'Recuperado', color: 'var(--ok)', desc: 'Llegó, volvió o te pagaron' },
@@ -428,20 +452,20 @@ const Core = (() => {
       r.days = days(r.date, today);
       r.paid = lostPaid.get(r.rma) || 0;
       r.feesCharged = (feesByOrder.get(r.order) || []).reduce((a, s) => a + s.net, 0);
-      const bm = r.v ? marks['box-' + (r.v.trk || r.v.cart)] : null;
       let st;
       if (r.paid > 0) st = 'pagada';
       else if (r.fault === 'WFS') st = 'wfs';
       else if (r.disp === 'RESTOCK') st = 'restock';
       else if (r.disp === 'DISPOSE') st = 'desechada';
       else if (r.disp === 'RTV') {
+        const um = r.v ? marks[uid(r.v.k)] : null;
         if (!r.v) st = 'rtv_sincaja';
-        else if (!bm || !bm.estado) st = 'rtv_pend';
-        else if (bm.estado === 'no_llego' || (bm.estado === 'incompleta' && (bm.faltan || []).includes(r.v.k))) st = 'rtv_falta';
-        else st = 'rtv_ok';
+        else if (!um) st = 'rtv_pend';
+        else st = um.estado === 'no_llego' ? 'rtv_falta' : 'rtv_ok';
       } else if (r.processed) st = 'rtv_sincaja';
       else st = r.days != null && r.days > limit ? 'vencida' : 'camino';
       r.base = st;
+      r.left = st === 'camino' && r.days != null ? limit - r.days : null;
       const rm = marks['ret-' + r.rma + '-' + r.line];
       if (rm && rm.reclamo === 'abierto') st = 'rec_abierto';
       if (rm && rm.reclamo === 'pagado') st = 'rec_pagado';
@@ -461,11 +485,15 @@ const Core = (() => {
       const a = avgBy.get(v.gtin);
       v.value = v.ret ? v.ret.refund : (a ? a[0] / a[1] : 0);
       v.estimated = !v.ret;
+      v.mark = marks[uid(v.k)] || null;
+      v.uid = uid(v.k);
       boxMap.get(id).items.push(v);
     }
     const boxes = [...boxMap.values()].sort((a, b) => b.date.localeCompare(a.date));
     for (const b of boxes) {
-      b.mark = marks['box-' + b.id] || null;
+      const st = b.items.map((v) => v.mark ? v.mark.estado : '');
+      b.pend = st.filter((x) => !x).length;
+      b.state = st.includes('no_llego') ? 'problema' : !b.pend ? 'completa' : b.pend < st.length ? 'parcial' : '';
       b.value = b.items.reduce((a, v) => a + v.value, 0);
       b.age = days(b.date, today);
     }
@@ -527,11 +555,11 @@ const Core = (() => {
       body: 'El reporte de devoluciones dice que te las mandaron (RTV), pero el reporte de lo que te enviaron no las tiene. Si son recientes pueden ir en camino. Si pasan de 2 semanas, hay que reclamarlas.',
       amount: sum(sinCaja, 'refund'), go: 'devoluciones:rtv_sincaja',
     });
-    const pendBoxes = boxes.filter((b) => !b.mark || !b.mark.estado);
-    if (pendBoxes.length) findings.push({
-      id: 'boxes', kind: 'box', sev: 'warn', title: `${pendBoxes.length} cajas por confirmar si te llegaron`,
-      body: 'Walmart dice que te mandó estas cajas por FedEx. Solo tú sabes si llegaron completas. Márcalas en la pestaña Cajas y las que falten pasan solas a Reclamos.',
-      amount: pendBoxes.reduce((a, b) => a + b.value, 0), go: 'cajas',
+    const pendUnits = V.filter((v) => !v.mark);
+    if (pendUnits.length) findings.push({
+      id: 'boxes', kind: 'box', sev: 'warn', title: `${pendUnits.length} productos por confirmar si te llegaron`,
+      body: `Walmart dice que te los mandó por FedEx en ${boxes.filter((b) => b.pend).length} cajas. Solo tú sabes si llegaron. Márcalos en la pestaña Por llegarte. Lo que no llegue pasa solo a Reclamos.`,
+      amount: pendUnits.reduce((a, v) => a + v.value, 0), go: 'cajas',
     });
     const nonSell = R.filter((r) => r.processed && r.cond);
     const ns = nonSell.filter((r) => /non/i.test(r.cond)).length;
@@ -560,15 +588,31 @@ const Core = (() => {
       if (r.state === 'rtv_falta') claims.push({ id: 'ret-' + r.k, group: 'noBox', amount: r.refund, ret: r });
       if (r.state === 'rtv_sincaja' && days(r.rtvDate || r.processed, today) > 14) claims.push({ id: 'ret-' + r.k, group: 'noShip', amount: r.refund, ret: r });
     }
-    for (const b of boxes) if (b.mark && (b.mark.estado === 'no_llego' || b.mark.estado === 'incompleta')) {
-      for (const v of b.items) if (!v.ret && (b.mark.estado === 'no_llego' || (b.mark.faltan || []).includes(v.k)))
-        claims.push({ id: 'rtv-' + v.k, group: 'noBox', amount: v.value, rtv: v, box: b });
-    }
+    for (const b of boxes) for (const v of b.items) if (!v.ret && v.mark && v.mark.estado === 'no_llego')
+      claims.push({ id: 'rtv-' + v.k, group: 'noBox', amount: v.value, rtv: v, box: b });
     for (const f of findings) if (f.kind === 'fee') claims.push({ id: f.id, group: 'fees', amount: f.amount, finding: f });
+
+    // 8. Por producto (GTIN)
+    const P = new Map();
+    const prod = (g, name, sku) => {
+      if (!P.has(g)) P.set(g, { gtin: g, name: '', sku: '', rets: [], extra: [], n: { recuperar: 0, confirmar: 0, camino: 0, cubre: 0, recuperado: 0, perdido: 0 }, amt: { recuperar: 0, confirmar: 0, camino: 0, cubre: 0, recuperado: 0, perdido: 0 }, refund: 0 });
+      const p = P.get(g); if (!p.name && name) p.name = name; if (!p.sku && sku) p.sku = sku; return p;
+    };
+    for (const r of R) { const p = prod(r.gtin, r.item, r.sku); p.rets.push(r); p.refund += r.refund; p.n[r.bucket]++; p.amt[r.bucket] += r.refund; }
+    for (const v of V) {
+      const p = prod(v.gtin, v.item, '');
+      if (v.ret) continue;
+      p.extra.push(v);
+      const b = !v.mark ? 'confirmar' : v.mark.estado === 'no_llego' ? 'recuperar' : 'recuperado';
+      p.n[b]++; p.amt[b] += v.value;
+    }
+    for (const v of V) { const p = P.get(v.gtin); if (p && !/^WFS-|^FBM-/.test(p.name) && v.item && v.item.length < p.name.length) p.name = v.item; }
+    const products = [...P.values()].map((p) => ({ ...p, pending: p.amt.recuperar + p.amt.confirmar + p.amt.camino, incoming: V.filter((v) => v.gtin === p.gtin && !v.mark) }))
+      .sort((a, b) => b.pending - a.pending || b.refund - a.refund);
 
     const range = (arr, f) => minmax(arr.map(f).filter(Boolean));
     return {
-      returns: R, rtv: V, settle: S, boxes, byType: [...byType.values()].sort((a, b) => b.total - a.total), findings, buckets, feeAlerts, claims, limit,
+      returns: R, rtv: V, settle: S, boxes, products, byType: [...byType.values()].sort((a, b) => b.total - a.total), findings, buckets, feeAlerts, claims, limit,
       coverage: {
         returns: R.length ? range(R, (r) => r.date) : null,
         rtv: V.length ? range(V, (v) => v.date) : null,
@@ -619,7 +663,7 @@ const Core = (() => {
     return out.join('\n');
   }
 
-  return { parseCSV, normalize, merge, analyze, claimText, STATE, BUCKETS, LABEL, clean, date };
+  return { parseCSV, normalize, merge, analyze, claimText, STATE, BUCKETS, LABEL, clean, date, uid };
 })();
 // CORE-END
 </script>
@@ -629,7 +673,7 @@ const Core = (() => {
 const CHUNK = 150;
 const Store = {
   mode: 'local', db: null, canWrite: true, listeners: [],
-  data: { returns: [], rtv: [], settle: [], settlePeriod: null }, marks: {}, cfg: { dias: 45 }, ready: false,
+  data: { returns: [], rtv: [], settle: [], settlePeriod: null }, marks: {}, products: {}, cfg: { dias: 45 }, ready: false,
   emit() { this.listeners.forEach((f) => f()); },
   async init() {
     let db = null, user = null;
@@ -642,7 +686,7 @@ const Store = {
       this.mode = 'local';
       try {
         const s = JSON.parse(localStorage.getItem('wfs-control') || 'null');
-        if (s) { this.data = s.data || this.data; this.marks = s.marks || {}; this.cfg = s.cfg || this.cfg; }
+        if (s) { this.data = s.data || this.data; this.marks = s.marks || {}; this.products = s.products || {}; this.cfg = s.cfg || this.cfg; }
       } catch (e) {}
       this.ready = true; this.emit();
     }
@@ -669,10 +713,13 @@ const Store = {
       snap.docs.forEach((d) => { m[d.id] = d.data(); });
       this.marks = m; gotMarks = true; done();
     }, () => { gotMarks = true; done(); });
+    this.db.collection('products').onSnapshot((snap) => {
+      const m = {}; snap.docs.forEach((d) => { m[d.id] = d.data(); }); this.products = m; this.emit();
+    }, () => {});
     this.db.doc('meta/config').onSnapshot((d) => { if (d.exists) this.cfg = { ...this.cfg, ...d.data() }; this.emit(); });
   },
   persistLocal() {
-    try { localStorage.setItem('wfs-control', JSON.stringify({ data: this.data, marks: this.marks, cfg: this.cfg })); } catch (e) { showToast('El navegador no dejó guardar los datos.'); }
+    try { localStorage.setItem('wfs-control', JSON.stringify({ data: this.data, marks: this.marks, products: this.products, cfg: this.cfg })); } catch (e) { showToast('El navegador no dejó guardar los datos.'); }
   },
   async saveReport(type, rows, period) {
     if (this.mode === 'local') {
@@ -690,6 +737,17 @@ const Store = {
     if (this.mode === 'local') { if (val) this.marks[id] = val; else delete this.marks[id]; this.persistLocal(); this.emit(); return; }
     if (val) { this.marks[id] = val; this.emit(); await this.db.doc('marks/' + id).set(val); }
     else { delete this.marks[id]; this.emit(); await this.db.doc('marks/' + id).delete(); }
+  },
+  async saveProduct(gtin, val) {
+    this.products[gtin] = { ...(this.products[gtin] || {}), ...val };
+    if (this.mode === 'local') { this.persistLocal(); this.emit(); return; }
+    this.emit(); await this.db.doc('products/' + gtin).set(this.products[gtin]);
+  },
+  async saveMarks(entries) {
+    for (const [id, val] of entries) { if (val) this.marks[id] = val; else delete this.marks[id]; }
+    if (this.mode === 'local') { this.persistLocal(); this.emit(); return; }
+    this.emit();
+    for (const [id, val] of entries) { if (val) await this.db.doc('marks/' + id).set(val); else await this.db.doc('marks/' + id).delete(); }
   },
   async saveCfg(cfg) {
     this.cfg = { ...this.cfg, ...cfg };
@@ -714,7 +772,7 @@ const TYPE_ES = {
   Refund: 'Reembolso de Walmart a ti', InboundTransportationFee: 'Transporte de entrada a WFS', LostInventory: 'Inventario perdido (te pagan)',
   FoundInventory: 'Inventario encontrado (te descuentan)', StorageFee: 'Almacenamiento',
 };
-const TABS = [['resumen', 'Resumen'], ['devoluciones', 'Devoluciones'], ['cajas', 'Cajas que te mandaron'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
+const TABS = [['resumen', 'Resumen'], ['productos', 'Por producto'], ['cajas', 'Por llegarte'], ['devoluciones', 'Devoluciones'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
 const ui = { tab: 'resumen', retFilter: 'todas', q: '', limit: 60, boxFilter: 'pend', setFilter: 'todos', sel: null, confirmClear: false, log: [] };
 let M = null;
 
@@ -732,7 +790,7 @@ function render() {
   $('#seller').textContent = (Store.cfg.empresa ? Store.cfg.empresa + ' · ' : '') + 'Walmart Marketplace · WFS';
   $('#mode').textContent = Store.mode === 'db' ? (Store.canWrite ? 'Guardado en la nube' : 'Solo lectura') : 'Guardado en este navegador';
   const nClaims = M.claims.length;
-  const nBoxes = M.boxes.filter((b) => !b.mark || !b.mark.estado).length;
+  const nBoxes = M.rtv.filter((v) => !v.mark).length;
   $('#tabs').innerHTML = TABS.map(([id, l]) => {
     const c = id === 'reclamos' && nClaims ? `<span class="count">${nClaims}</span>` : id === 'cajas' && nBoxes ? `<span class="count" style="background:var(--warn-dim);color:var(--warn)">${nBoxes}</span>` : '';
     return `<button role="tab" id="tab-${id}" aria-selected="${ui.tab === id}" data-tab="${id}">${l}${c}</button>`;
@@ -740,7 +798,7 @@ function render() {
   const hasData = M.returns.length || M.rtv.length || M.settle.length;
   const v = $('#view');
   if (!hasData && ui.tab !== 'cargar') { v.innerHTML = emptyState(); return; }
-  v.innerHTML = ({ resumen: vResumen, devoluciones: vDevoluciones, cajas: vCajas, cobros: vCobros, reclamos: vReclamos, cargar: vCargar })[ui.tab]();
+  v.innerHTML = ({ resumen: vResumen, productos: vProductos, devoluciones: vDevoluciones, cajas: vCajas, cobros: vCobros, reclamos: vReclamos, cargar: vCargar })[ui.tab]();
   if (ui.tab === 'reclamos') updateClaimText();
 }
 
@@ -763,7 +821,7 @@ function vResumen() {
       <span class="big">${money(recuperar)}</span>
       <p>Devoluciones que nunca llegaron o que no te llegaron (${B.recuperar.n}), más ${money(M.feeAlerts)} en cobros que parecen repetidos o incorrectos.</p>
       <div class="row" style="margin-top:8px"><button class="btn primary small" data-go="reclamos">Armar reclamo</button>
-      <span class="muted" style="font-size:12px">+ ${money(B.confirmar.amt)} por confirmar</span></div>
+      <span class="muted" style="font-size:12px">+ ${money(B.confirmar.amt)} por llegarte</span></div>
     </div>
     <div class="buckets">
       ${order.map((k) => `<button class="bucket" data-go="devoluciones:${k}">
@@ -825,7 +883,7 @@ function vDevoluciones() {
     <thead><tr><th>Estado</th><th>Iniciada</th><th>Producto</th><th>Motivo · culpa</th><th>Dónde está</th><th class="r">Reembolso</th></tr></thead>
     <tbody>${shown.map((r) => `<tr class="click" data-ret="${esc(r.k)}">
       <td>${pill(r.state)}</td>
-      <td class="num">${fmtDate(r.date)}<div class="sku">${r.days != null ? r.days + ' días' : ''}</div></td>
+      <td class="num">${fmtDate(r.date)}<div class="sku">${r.days != null ? r.days + ' días' : ''}</div>${countdown(r)}</td>
       <td><div class="item" title="${esc(r.item)}">${esc(short(r.item))}</div><div class="sku">${esc(r.sku)} · RMA ${esc(r.rma)}</div></td>
       <td>${esc(REASON[r.reason] || r.reason)}<div class="sku">${r.fault === 'WFS' ? 'Culpa WFS' : 'Culpa vendedor'}</div></td>
       <td style="font-size:12px">${esc(where(r))}</td>
@@ -844,33 +902,105 @@ function where(r) {
   return t || (r.trk ? `Sin movimiento · tracking ${r.trk}` : 'Sin tracking ni movimiento');
 }
 
+function countdown(r) {
+  if (r.left == null) return '';
+  return r.left > 0 ? `<div class="countdown" style="color:${r.left <= 10 ? 'var(--warn)' : 'var(--muted)'}">reclamar en ${r.left} días</div>` : `<div class="countdown" style="color:var(--bad)">ya se puede reclamar</div>`;
+}
+function photo(gtin, cls = '') {
+  const p = Store.products[gtin] || {};
+  const src = p.photo ? '/_blob/' + p.photo : p.img;
+  const prod = M && M.products.find((x) => x.gtin === gtin);
+  const ini = ((prod && (prod.name || prod.sku)) || '?').replace(/[^A-Za-z0-9 ]/g, '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return `<div class="thumb ${cls}">${src ? `<img src="${esc(src)}" alt="">` : esc(ini)}</div>`;
+}
+function unitBtns(v) {
+  const st = v.mark ? v.mark.estado : '';
+  const dis = Store.canWrite ? '' : 'disabled';
+  if (st) return `<span class="pill t-${st === 'llego' ? 'ok' : 'bad'}">${st === 'llego' ? 'Llegó' : 'No llegó'} ${fmtDate(v.mark.at)}</span><button class="btn small" data-unit="${esc(v.uid)}" data-st="" ${dis}>Deshacer</button>`;
+  return `<span class="ubtns"><button class="btn small" data-unit="${esc(v.uid)}" data-st="llego" ${dis}>Ya llegó</button><button class="btn small" data-unit="${esc(v.uid)}" data-st="no_llego" ${dis}>No llegó</button></span>`;
+}
+
+function vProductos() {
+  const P = M.products;
+  const tot = P.reduce((a, p) => a + p.pending, 0);
+  const row = (k, l, p) => `<dt><i class="dot" style="background:${Core.BUCKETS[k].color}"></i>${l}</dt><dd>${p.n[k]}</dd><dd>${money(p.amt[k], 0)}</dd>`;
+  return `
+  <p class="prose" style="margin:0 0 14px">Por cada producto: cuánto dinero tienes pendiente en devoluciones (lo que viene en camino a Walmart, lo que Walmart dice que te mandó y lo que hay que reclamar). En total, <b class="num">${money(tot)}</b> en ${P.filter((p) => p.pending > 0).length} productos. Toca un producto para ver cada unidad y ponerle foto.</p>
+  <div class="prods">${P.map((p) => `<button class="prod" data-prod="${esc(p.gtin)}">
+    <div class="prod-top">${photo(p.gtin)}<div style="min-width:0"><div class="nm">${esc(p.name)}</div><div class="sku">${esc(p.sku || 'GTIN ' + p.gtin)}</div></div></div>
+    <div><div class="label">Pendiente</div><div class="pend" style="color:${p.pending ? 'var(--fg)' : 'var(--muted)'}">${money(p.pending)}</div></div>
+    <dl>${row('recuperar', 'Por reclamar', p)}${row('confirmar', 'Por llegarte', p)}${row('camino', 'En camino a Walmart', p)}${row('cubre', 'Lo cubre Walmart', p)}${row('recuperado', 'Ya te llegó / pagado', p)}</dl>
+  </button>`).join('')}</div>`;
+}
+
+function openProduct(gtin) {
+  const p = M.products.find((x) => x.gtin === gtin); if (!p) return;
+  const units = [
+    ...p.rets.map((r) => ({ date: r.date, html: `<tr class="click" data-ret="${esc(r.k)}"><td>${pill(r.state)}</td><td class="num">${fmtDate(r.date)}<div class="sku">${r.days} días</div>${countdown(r)}</td><td style="font-size:12px">${esc(where(r))}${r.v && !r.v.mark ? '<div style="margin-top:6px">' + unitBtns(r.v) + '</div>' : ''}</td><td class="r num">${money(r.refund)}</td></tr>` })),
+    ...p.extra.map((v) => ({ date: v.date, html: `<tr><td><span class="pill t-${!v.mark ? 'warn' : v.mark.estado === 'llego' ? 'ok' : 'bad'}">${!v.mark ? 'Enviada a ti · confirma' : v.mark.estado === 'llego' ? 'Te llegó' : 'No te llegó'}</span></td><td class="num">${fmtDate(v.date)}<div class="sku">enviada</div></td><td style="font-size:12px">Caja ${esc(v.trk || v.cart)} · no está en tu reporte de devoluciones<div style="margin-top:6px">${unitBtns(v)}</div></td><td class="r num">${v.value ? '≈' + money(v.value) : '—'}</td></tr>` })),
+  ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  $('#dlg').innerHTML = `<div class="dlg">
+    <div class="dlg-head"><div class="prod-top">${photo(gtin, 'lg')}<div style="min-width:0"><div class="label">Producto</div><h2 style="margin-top:4px">${esc(p.name)}</h2><div class="sku">${esc(p.sku)} · GTIN ${esc(p.gtin)}</div>
+      ${Store.canWrite ? `<div class="row" style="margin-top:10px"><label class="btn small" for="photo-in">${(Store.products[gtin] || {}).photo || (Store.products[gtin] || {}).img ? 'Cambiar foto' : 'Agregar foto'}</label><input id="photo-in" type="file" accept="image/*" data-gtin="${esc(gtin)}" hidden></div>` : ''}</div></div>
+      <button class="btn small" data-close>Cerrar</button></div>
+    <div class="buckets" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="bucket"><span class="head">Pendiente</span><span class="amt">${money(p.pending)}</span><span class="sub">reclamar + por llegarte + en camino</span></div>
+      <div class="bucket"><span class="head">Por llegarte</span><span class="amt">${p.incoming.length}</span><span class="sub">unidades enviadas a ti</span></div>
+      <div class="bucket"><span class="head">Reembolsado al cliente</span><span class="amt">${money(p.refund, 0)}</span><span class="sub">${p.rets.length} devoluciones</span></div>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Estado</th><th>Fecha</th><th>Dónde está</th><th class="r">Monto</th></tr></thead><tbody>${units.map((u) => u.html).join('')}</tbody></table></div>
+  </div>`;
+  const d = $('#dlg'); d.dataset.prod = gtin; if (!d.open) d.showModal();
+}
+
+async function uploadPhoto(gtin, file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 480 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    if (Store.mode === 'local') { await Store.saveProduct(gtin, { img: c.toDataURL('image/jpeg', 0.82) }); }
+    else {
+      const assets = await window.claude.use('assets');
+      if (!assets) return showToast('Aquí no se pueden subir fotos.');
+      const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.82));
+      const up = await assets.upload(blob, { type: 'image/jpeg' });
+      await Store.saveProduct(gtin, { photo: up.id });
+    }
+    showToast('Foto guardada');
+  } catch (e) { showToast('No se pudo subir la foto (' + (e.code || e.message || e) + ').'); }
+}
+
 function vCajas() {
   const all = M.boxes;
-  const f = { pend: ['Por confirmar', (b) => !b.mark || !b.mark.estado], prob: ['Con problema', (b) => b.mark && (b.mark.estado === 'no_llego' || b.mark.estado === 'incompleta')], ok: ['Llegaron completas', (b) => b.mark && b.mark.estado === 'completa'], todas: ['Todas', () => true] };
+  if (!all.length) return `<div class="empty"><h2>No has cargado el reporte Return to Seller</h2><p class="prose">Es el reporte de lo que Walmart dice que te mandó de vuelta. Cárgalo y aquí aparece cada producto que viene en camino, con su caja y tracking.</p><button class="btn primary" data-go="cargar">Cargar reportes</button></div>`;
+  const pend = M.products.filter((p) => p.incoming.length);
+  const f = { pend: ['Con productos por confirmar', (b) => b.pend > 0], prob: ['Con problema', (b) => b.state === 'problema'], ok: ['Llegaron completas', (b) => b.state === 'completa'], todas: ['Todas', () => true] };
   const list = all.filter(f[ui.boxFilter][1]);
-  if (!all.length) return `<div class="empty"><h2>No has cargado el reporte Return to Seller</h2><p class="prose">Es el reporte de lo que Walmart dice que te mandó de vuelta. Cárgalo y aquí aparecen las cajas con su tracking para que confirmes cuáles te llegaron.</p><button class="btn primary" data-go="cargar">Cargar reportes</button></div>`;
+  const nPend = M.rtv.filter((v) => !v.mark).length;
   return `
-  <p class="prose" style="margin:0 0 14px">Walmart dice que te mandó estas <b>${all.length} cajas</b> (${all.reduce((a, b) => a + b.items.length, 0)} productos). Busca cada tracking en FedEx o en tu bodega y márcala. Si falta algo, pasa solo a Reclamos. Los valores con ≈ son un estimado: ese producto no aparece en tu reporte de devoluciones, así que se usa el promedio que reembolsaste por el mismo producto.</p>
+  <section class="section" style="margin-top:0"><div class="section-head"><h2>Por llegarte: ${nPend} productos</h2><span class="muted" style="font-size:12px">Según el reporte Return to Seller de Walmart</span></div>
+  <p class="prose" style="margin:0">Cuando te llegue una caja, marca cada producto con <b>Ya llegó</b>, o usa <b>Llegó toda la caja</b> abajo. Lo que marques como <b>No llegó</b> pasa solo a Reclamos.</p>
+  <div class="incoming">${pend.map((p) => `<div class="inc">${photo(p.gtin)}<div style="min-width:0">
+    <h3>${p.incoming.length}× ${esc(short(p.name, 70))}</h3><div class="sku">${esc(p.sku || 'GTIN ' + p.gtin)}</div>
+    <ul>${p.incoming.map((v) => `<li><span class="num">Caja ${esc(v.trk || v.cart)} · enviada ${fmtDate(v.date)} · hace ${Math.round((Date.parse(today()) - Date.parse(v.date)) / 864e5)} días · ${v.value ? (v.estimated ? '≈' : '') + money(v.value) : 'sin valor'}</span>${unitBtns(v)}</li>`).join('')}</ul>
+  </div></div>`).join('') || '<div class="empty">No hay nada pendiente por llegarte.</div>'}</div></section>
+  <section class="section"><div class="section-head"><h2>Cajas</h2></div>
   <div class="toolbar"><div class="filters">${Object.entries(f).map(([k, [l, fn]]) => `<button class="filter" aria-pressed="${ui.boxFilter === k}" data-bf="${k}">${l} <span class="num">${all.filter(fn).length}</span></button>`).join('')}</div></div>
-  <div class="boxes">${list.map(boxCard).join('') || '<div class="empty">Nada en este grupo.</div>'}</div>`;
+  <div class="boxes">${list.map(boxCard).join('') || '<div class="empty">Nada en este grupo.</div>'}</div></section>`;
 }
 function boxCard(b) {
-  const st = (b.mark && b.mark.estado) || '';
-  const faltan = (b.mark && b.mark.faltan) || [];
   const dis = Store.canWrite ? '' : 'disabled';
-  return `<article class="box st-${st}" data-box="${esc(b.id)}">
+  const cls = { completa: 'completa', problema: 'no_llego', parcial: '', '': '' }[b.state];
+  return `<article class="box st-${cls}" data-box="${esc(b.id)}">
     <div class="box-head"><div><div class="trk">${esc(b.trk || b.cart)}</div><div class="sku">${esc(b.carrier || '')} · enviada ${fmtDate(b.date)} · hace ${b.age} días</div></div>
     <div class="num" style="font-weight:500">${money(b.value)}</div></div>
-    <ul>${b.items.map((v) => `<li class="${st === 'incompleta' && faltan.includes(v.k) ? 'missing' : ''}">
-      ${st === 'incompleta' ? `<input type="checkbox" aria-label="Falta este producto" data-miss="${esc(v.k)}" ${faltan.includes(v.k) ? 'checked' : ''} ${dis}>` : '<span class="sku">1×</span>'}
+    <ul>${b.items.map((v) => `<li class="${v.mark ? (v.mark.estado === 'llego' ? 'got' : 'lost') : ''}">
+      <span class="sku">${v.mark ? (v.mark.estado === 'llego' ? '✓' : '✕') : '1×'}</span>
       <span class="t" title="${esc(v.item)}">${esc(v.item)}${v.ret ? '' : ' <span class="sku">· no está en devoluciones</span>'}</span>
       <span class="num sku">${v.value ? (v.estimated ? '≈' : '') + money(v.value, 0) : '—'}</span></li>`).join('')}</ul>
-    ${st === 'incompleta' ? '<div class="note">Marca los productos que faltaron.</div>' : ''}
     <div class="acts">
-      <button class="btn small ${st === 'completa' ? 'on-ok' : ''}" data-bs="completa" ${dis}>Llegó completa</button>
-      <button class="btn small ${st === 'incompleta' ? 'on-warn' : ''}" data-bs="incompleta" ${dis}>Faltan cosas</button>
-      <button class="btn small ${st === 'no_llego' ? 'on-bad' : ''}" data-bs="no_llego" ${dis}>No llegó</button>
-      ${st ? `<button class="btn small" data-bs="" ${dis}>Deshacer</button>` : ''}
+      ${b.pend ? `<button class="btn small" data-boxall="llego" ${dis}>Llegó toda la caja</button><button class="btn small" data-boxall="no_llego" ${dis}>No llegó la caja</button>` : `<span class="pill t-${b.state === 'completa' ? 'ok' : 'bad'}">${b.state === 'completa' ? 'Llegó completa' : 'Con faltantes'}</span><button class="btn small" data-boxall="" ${dis}>Deshacer</button>`}
     </div></article>`;
 }
 
@@ -1027,7 +1157,7 @@ function openReturn(k) {
       <div class="field full"><label class="label" for="rc-note">Notas</label><textarea id="rc-note" rows="2" ${dis}>${esc(mk.nota || '')}</textarea></div>
       ${Store.canWrite ? `<div class="full row"><button class="btn primary" value="save" id="rc-save">Guardar</button></div>` : ''}
     </div></form>`;
-  const dlg = $('#dlg');
+  const dlg = $('#dlg'); delete dlg.dataset.prod;
   $('#ret-form').addEventListener('submit', async (e) => {
     if (e.submitter && e.submitter.value === 'save') {
       const val = { reclamo: $('#rc-st').value, caso: $('#rc-case').value.trim(), monto: parseFloat($('#rc-amt').value) || 0, nota: $('#rc-note').value.trim(), at: today() };
@@ -1035,23 +1165,31 @@ function openReturn(k) {
       try { await Store.saveMark('ret-' + r.rma + '-' + r.line, empty ? null : val); showToast('Guardado'); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
     }
   });
-  dlg.showModal();
+  if (!dlg.open) dlg.showModal();
 }
 
 // Eventos
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-bs],#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
+  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
   if (!t) return;
+  if (t.dataset.close !== undefined) return $('#dlg').close();
   if (t.dataset.tab) return go(t.dataset.tab);
-  if (t.dataset.go) return go(t.dataset.go);
+  if (t.dataset.go) { if ($('#dlg').open) $('#dlg').close(); return go(t.dataset.go); }
   if (t.dataset.rf) { ui.retFilter = t.dataset.rf; ui.limit = 60; return render(); }
   if (t.dataset.bf) { ui.boxFilter = t.dataset.bf; return render(); }
   if (t.dataset.sf) { ui.setFilter = t.dataset.sf; ui.limit = 60; return render(); }
   if (t.dataset.ret) return openReturn(t.dataset.ret);
-  if (t.dataset.bs !== undefined) {
-    const id = t.closest('[data-box]').dataset.box, cur = Store.marks['box-' + id] || {};
-    const val = t.dataset.bs ? { ...cur, estado: t.dataset.bs, faltan: t.dataset.bs === 'incompleta' ? (cur.faltan || []) : [], at: today() } : null;
-    try { await Store.saveMark('box-' + id, val); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+  if (t.dataset.prod) return openProduct(t.dataset.prod);
+  if (t.dataset.unit) {
+    const val = t.dataset.st ? { estado: t.dataset.st, at: today() } : null;
+    try { await Store.saveMarks([[t.dataset.unit, val]]); if (val) showToast(val.estado === 'llego' ? 'Marcado como recibido' : 'Marcado como no recibido: pasa a Reclamos'); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    return;
+  }
+  if (t.dataset.boxall !== undefined) {
+    const b = M.boxes.find((x) => x.id === t.closest('[data-box]').dataset.box);
+    const st = t.dataset.boxall;
+    const entries = b.items.filter((v) => !st || !v.mark).map((v) => [v.uid, st ? { estado: st, at: today() } : null]);
+    try { await Store.saveMarks(entries); showToast(st ? `${entries.length} productos marcados` : 'Caja sin marcar'); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
     return;
   }
   if (t.id === 'more') { ui.limit += 60; return render(); }
@@ -1076,11 +1214,7 @@ document.addEventListener('click', async (e) => {
 });
 document.addEventListener('change', async (e) => {
   const t = e.target;
-  if (t.dataset.miss) {
-    const id = t.closest('[data-box]').dataset.box, cur = Store.marks['box-' + id] || { estado: 'incompleta' };
-    const set = new Set(cur.faltan || []); t.checked ? set.add(t.dataset.miss) : set.delete(t.dataset.miss);
-    try { await Store.saveMark('box-' + id, { ...cur, faltan: [...set], at: today() }); } catch (err) { showToast('No se pudo guardar.'); }
-  }
+  if (t.id === 'photo-in' && t.files[0]) await uploadPhoto(t.dataset.gtin, t.files[0]);
   if (t.dataset.cl) { t.checked ? ui.claimSel.add(t.dataset.cl) : ui.claimSel.delete(t.dataset.cl); updateClaimText(); }
   if (t.id === 'file') handleFiles([...t.files]);
   if (t.id === 'empresa') { await Store.saveCfg({ empresa: t.value.trim() }); showToast('Nombre guardado'); }
@@ -1100,7 +1234,8 @@ document.addEventListener('input', (e) => {
 
 const h = (location.hash || '').slice(1);
 if (TABS.some(([id]) => id === h)) ui.tab = h;
-Store.listeners.push(() => { if (ui.claimSel && M) { /* conservar selección */ } render(); });
+Store.listeners.push(() => { render(); const d = $('#dlg'); if (d.open && d.dataset.prod) openProduct(d.dataset.prod); });
+$('#dlg').addEventListener('close', () => { delete $('#dlg').dataset.prod; });
 render();
 Store.init();
 </script>
