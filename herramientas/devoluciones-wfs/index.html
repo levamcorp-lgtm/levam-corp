@@ -1,0 +1,1108 @@
+<title>Devoluciones WFS Levam</title>
+<meta charset="utf-8">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: herramienta de conciliación — franja de resumen en dólares arriba, pestañas por reporte, tablas densas debajo. Identidad Levam: azul, líneas finas, etiquetas en versalitas. */
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f5f7fa;
+  --fg: #111418;
+  --muted: #687280;
+  --line: rgba(17, 32, 56, 0.11);
+  --accent: #2d7dd2;
+  --accent-dim: rgba(45, 125, 210, 0.09);
+  --ok: #23774a;
+  --ok-dim: rgba(35, 119, 74, 0.10);
+  --warn: #a8670f;
+  --warn-dim: rgba(196, 128, 22, 0.12);
+  --bad: #c0392b;
+  --bad-dim: rgba(192, 57, 43, 0.10);
+  --grey-dim: rgba(104, 114, 128, 0.12);
+  --font-body: "DM Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1218; --bg-soft: #161c25; --fg: #e7ecf2; --muted: #8e99a7; --line: rgba(205, 220, 240, 0.12);
+    --accent: #5ea6ee; --accent-dim: rgba(94, 166, 238, 0.13);
+    --ok: #52b884; --ok-dim: rgba(82, 184, 132, 0.14); --warn: #e3a948; --warn-dim: rgba(227, 169, 72, 0.14);
+    --bad: #f0715d; --bad-dim: rgba(240, 113, 93, 0.14); --grey-dim: rgba(142, 153, 167, 0.16);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1218; --bg-soft: #161c25; --fg: #e7ecf2; --muted: #8e99a7; --line: rgba(205, 220, 240, 0.12);
+  --accent: #5ea6ee; --accent-dim: rgba(94, 166, 238, 0.13);
+  --ok: #52b884; --ok-dim: rgba(82, 184, 132, 0.14); --warn: #e3a948; --warn-dim: rgba(227, 169, 72, 0.14);
+  --bad: #f0715d; --bad-dim: rgba(240, 113, 93, 0.14); --grey-dim: rgba(142, 153, 167, 0.16);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; margin: 0;
+}
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.eyebrow { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--accent); }
+.label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+h1 { font-size: 22px; font-weight: 600; margin: 4px 0 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 15px; font-weight: 600; margin: 0; text-wrap: balance; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.top { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; padding-bottom: 16px; border-bottom: 0.5px solid var(--line); }
+.brand { display: flex; gap: 12px; align-items: center; }
+.mark { width: 28px; height: 28px; position: relative; flex: none; }
+.mark i { position: absolute; display: block; background: var(--muted); }
+.mark i:nth-child(1) { left: 6px; top: 0; width: 2px; height: 22px; }
+.mark i:nth-child(2) { left: 6px; bottom: 0; width: 16px; height: 2px; }
+.mark i:nth-child(3) { left: 10px; bottom: 6px; width: 10px; height: 2px; background: var(--accent); }
+.coverage { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 9px; border: 0.5px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--bg); white-space: nowrap; }
+.chip b { color: var(--fg); font-weight: 500; }
+.mode { font-size: 11px; color: var(--muted); }
+
+nav.tabs { display: flex; gap: 2px; overflow-x: auto; margin: 14px 0 20px; border-bottom: 0.5px solid var(--line); scrollbar-width: none; }
+nav.tabs button { background: none; border: 0; padding: 10px 14px; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+nav.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 500; }
+nav.tabs .count { font-family: var(--font-num); font-size: 11px; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--bad-dim); color: var(--bad); }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 3px; border: 0.5px solid var(--line); background: var(--bg); font-size: 12px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { opacity: 0.9; }
+.btn.small { padding: 5px 10px; font-size: 12px; }
+.btn.on-ok { background: var(--ok-dim); border-color: var(--ok); color: var(--ok); }
+.btn.on-warn { background: var(--warn-dim); border-color: var(--warn); color: var(--warn); }
+.btn.on-bad { background: var(--bad-dim); border-color: var(--bad); color: var(--bad); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Resumen */
+.hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr); gap: 20px; align-items: stretch; }
+.hero-main { padding: 20px; background: var(--bad-dim); border-radius: 4px; display: flex; flex-direction: column; gap: 6px; }
+.hero-main .big { font-family: var(--font-num); font-size: 38px; font-weight: 500; color: var(--bad); line-height: 1.1; letter-spacing: -0.02em; }
+.hero-main p { margin: 0; font-size: 13px; color: var(--fg); max-width: 40ch; }
+.buckets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 0.5px solid var(--line); border-radius: 4px; }
+.bucket { padding: 14px 16px; border-right: 0.5px solid var(--line); border-bottom: 0.5px solid var(--line); display: flex; flex-direction: column; gap: 4px; background: none; border-top: 0; border-left: 0; text-align: left; }
+.bucket:nth-child(3n) { border-right: 0; }
+.bucket:nth-last-child(-n+3) { border-bottom: 0; }
+.bucket:hover { background: var(--bg-soft); }
+.bucket .amt { font-family: var(--font-num); font-size: 20px; font-weight: 500; }
+.bucket .sub { font-size: 12px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
+.bucket .head { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg); }
+
+.bar-block { margin: 24px 0 8px; display: flex; flex-direction: column; gap: 8px; }
+.bar { display: flex; height: 14px; border-radius: 2px; overflow: hidden; background: var(--bg-soft); }
+.bar span { display: block; height: 100%; }
+.bar span + span { border-left: 1.5px solid var(--bg); }
+.bar-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); }
+.bar-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.section { margin-top: 28px; display: flex; flex-direction: column; gap: 12px; }
+.section-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+.findings { display: flex; flex-direction: column; border: 0.5px solid var(--line); border-radius: 4px; }
+.finding { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: 14px; padding: 14px 16px 14px 0; border-bottom: 0.5px solid var(--line); align-items: start; }
+.finding:last-child { border-bottom: 0; }
+.finding .stripe { align-self: stretch; border-radius: 0 2px 2px 0; }
+.finding h3 { font-size: 14px; font-weight: 600; margin: 0 0 3px; }
+.finding p { margin: 0; font-size: 13px; color: var(--muted); max-width: 80ch; }
+.finding .amt { font-family: var(--font-num); font-size: 15px; font-weight: 500; text-align: right; white-space: nowrap; }
+.finding .act { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Tablas */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter { font-size: 12px; padding: 5px 10px; border-radius: 999px; border: 0.5px solid var(--line); background: var(--bg); color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.filter[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+.filter .num { font-size: 11px; }
+.search { flex: 1 1 200px; min-width: 0; max-width: 320px; padding: 7px 12px; border: 0.5px solid var(--line); border-radius: 3px; background: var(--bg-soft); }
+.table-wrap { overflow-x: auto; border: 0.5px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 500; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 9px 12px; border-bottom: 0.5px solid var(--line); background: var(--bg-soft); white-space: nowrap; }
+td { padding: 9px 12px; border-bottom: 0.5px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+tbody tr.click { cursor: pointer; }
+tbody tr.click:hover td { background: var(--bg-soft); }
+td.r, th.r { text-align: right; }
+td .item { max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td .sku { font-size: 11px; color: var(--muted); font-family: var(--font-num); }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.t-ok { color: var(--ok); background: var(--ok-dim); }
+.t-warn { color: var(--warn); background: var(--warn-dim); }
+.t-bad { color: var(--bad); background: var(--bad-dim); }
+.t-info { color: var(--accent); background: var(--accent-dim); }
+.t-grey { color: var(--muted); background: var(--grey-dim); }
+.more { margin-top: 10px; }
+
+/* Cajas */
+.boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.box { border: 0.5px solid var(--line); border-radius: 4px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.box.st-completa { border-color: var(--ok); }
+.box.st-no_llego, .box.st-incompleta { border-color: var(--bad); }
+.box-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.box-head .trk { font-family: var(--font-num); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.box ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.box li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; font-size: 12px; }
+.box li .t { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.box li.missing .t { text-decoration: line-through; color: var(--bad); }
+.box li input { margin: 2px 0 0; }
+.box .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.box .note { font-size: 11px; color: var(--warn); }
+
+/* Reclamos */
+.claim-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.claim-list { border: 0.5px solid var(--line); border-radius: 4px; }
+.claim-group { border-bottom: 0.5px solid var(--line); }
+.claim-group:last-child { border-bottom: 0; }
+.claim-group > header { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 10px 14px; background: var(--bg-soft); font-size: 12px; font-weight: 500; }
+.claim-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding: 9px 14px; border-top: 0.5px solid var(--line); font-size: 13px; align-items: start; }
+.claim-row label { display: contents; cursor: pointer; }
+.claim-row .t { min-width: 0; }
+.claim-row .t small { display: block; color: var(--muted); font-size: 11px; font-family: var(--font-num); overflow-wrap: anywhere; }
+.claim-out { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 10px; }
+textarea.out { width: 100%; min-height: 360px; padding: 12px; border: 0.5px solid var(--line); border-radius: 4px; background: var(--bg-soft); font-family: var(--font-num); font-size: 12px; line-height: 1.55; resize: vertical; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field input, .field select, .field textarea { padding: 8px 10px; border: 0.5px solid var(--line); border-radius: 3px; background: var(--bg-soft); min-width: 0; }
+
+/* Cargar */
+.drop { border: 1px dashed var(--muted); border-radius: 4px; padding: 28px 20px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; background: var(--bg-soft); }
+.drop.over { border-color: var(--accent); background: var(--accent-dim); }
+.reports { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.report { border: 0.5px solid var(--line); border-radius: 4px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.report .n { font-family: var(--font-num); font-size: 20px; font-weight: 500; }
+.log { font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.log .ok { color: var(--ok); } .log .err { color: var(--bad); }
+.prose { max-width: 70ch; font-size: 13px; color: var(--muted); }
+.prose p { margin: 0 0 8px; }
+
+/* Detalle */
+dialog { border: 0.5px solid var(--line); border-radius: 6px; padding: 0; width: min(640px, calc(100vw - 32px)); background: var(--bg); color: var(--fg); max-height: calc(100vh - 32px); }
+dialog::backdrop { background: rgba(10, 14, 20, 0.45); }
+.dlg { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.dlg-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 20px; }
+.kv div { min-width: 0; }
+.kv dt { font-size: 11px; color: var(--muted); }
+.kv dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.claim-box { border-top: 0.5px solid var(--line); padding-top: 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.claim-box .full { grid-column: 1 / -1; }
+
+.empty { padding: 32px 20px; text-align: left; border: 0.5px dashed var(--line); border-radius: 4px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: 3px; font-size: 13px; z-index: 30; }
+.confirm-inline { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--bad); }
+
+@media (max-width: 820px) {
+  .hero, .claim-grid { grid-template-columns: minmax(0, 1fr); }
+  .reports { grid-template-columns: minmax(0, 1fr); }
+  .claim-out { position: static; }
+}
+@media (max-width: 560px) {
+  .buckets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bucket:nth-child(3n) { border-right: 0.5px solid var(--line); }
+  .bucket:nth-child(2n) { border-right: 0; }
+  .bucket:nth-last-child(-n+3) { border-bottom: 0.5px solid var(--line); }
+  .bucket:nth-last-child(-n+2) { border-bottom: 0; }
+  .hero-main .big { font-size: 32px; }
+  .kv, .claim-box { grid-template-columns: minmax(0, 1fr); }
+  .finding { grid-template-columns: 4px minmax(0, 1fr); }
+  .finding .amt { grid-column: 2; text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div>
+        <div class="eyebrow">Levam Corp · Walmart WFS</div>
+        <h1>Control de devoluciones y cobros</h1>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+      <div class="coverage" id="coverage"></div>
+      <div class="mode" id="mode">Cargando datos…</div>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <main id="view"></main>
+</div>
+
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// CORE-START — lógica pura: lectura de reportes, cruce y clasificación (sin DOM)
+const Core = (() => {
+  const clean = (v) => {
+    if (v == null) return '';
+    let s = String(v).trim();
+    const m = s.match(/^="?(.*?)"?$/);
+    if (m && s.startsWith('=')) s = m[1];
+    return s === 'NA' ? '' : s;
+  };
+  const num = (v) => {
+    const s = clean(v).replace(/[$,\s]/g, '');
+    if (!s) return 0;
+    const neg = /^\(.*\)$/.test(s);
+    const n = parseFloat(s.replace(/[()]/g, ''));
+    return isNaN(n) ? 0 : (neg ? -n : n);
+  };
+  const gtin = (v) => clean(v).replace(/\D/g, '').replace(/^0+/, '');
+  const date = (v) => {
+    const s = clean(v);
+    if (!s) return '';
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`; }
+    if (/^\d{5}(\.\d+)?$/.test(s)) { const d = new Date(Math.round((parseFloat(s) - 25569) * 864e5)); return d.toISOString().slice(0, 10); }
+    return '';
+  };
+  const days = (from, today) => from ? Math.round((Date.parse(today) - Date.parse(from)) / 864e5) : null;
+
+  function parseCSV(text) {
+    text = text.replace(/^﻿/, '');
+    const first = text.split(/\r?\n/).find((l) => l.trim()) || '';
+    const delim = [',', ';', '\t'].map((d) => [d, first.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+        else cell += c;
+      } else if (c === '"') q = true;
+      else if (c === delim) { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); rows.push(row); row = []; cell = '';
+      } else cell += c;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+
+  const SIGS = {
+    returns: ['rma number', 'return initiation date'],
+    rtv: ['cart id', 'qty shipped'],
+    settle: ['transaction type', 'net payable'],
+  };
+  const LABEL = { returns: 'Devoluciones (Customer Returns)', rtv: 'Enviado a ti (Return to Seller)', settle: 'Cobros WFS (Settlement)' };
+
+  // Encuentra la fila de títulos y el tipo de reporte
+  function detect(aoa) {
+    for (let i = 0; i < Math.min(aoa.length, 15); i++) {
+      const h = aoa[i].map((x) => clean(x).toLowerCase());
+      for (const [type, sig] of Object.entries(SIGS)) if (sig.every((s) => h.includes(s))) return { type, at: i, head: h };
+    }
+    return null;
+  }
+
+  function normalize(aoa) {
+    const d = detect(aoa);
+    if (!d) return null;
+    const col = (name) => d.head.indexOf(name.toLowerCase());
+    const pick = (r, name) => { const i = col(name); return i < 0 ? '' : r[i]; };
+    const body = aoa.slice(d.at + 1).filter((r) => r.some((x) => clean(x)));
+    let rows = [];
+    if (d.type === 'returns') {
+      rows = body.map((r) => ({
+        rma: clean(pick(r, 'RMA Number')), line: String(parseInt(clean(pick(r, 'RMA Line Number'))) || 1),
+        order: clean(pick(r, 'Customer Order ID')), sku: clean(pick(r, 'Seller SKU')), gtin: gtin(pick(r, 'GTIN')),
+        item: clean(pick(r, 'Item Name / Description')), qty: num(pick(r, 'QTY Returned')) || 1,
+        date: date(pick(r, 'Return Initiation Date')), trkStatus: clean(pick(r, 'Return Delivery Tracking Status')),
+        trk: clean(pick(r, 'Return Tracking ID')), reason: clean(pick(r, 'Return Reason')), fault: clean(pick(r, 'Fault')).toUpperCase(),
+        channel: clean(pick(r, 'Return Channel')), keep: clean(pick(r, 'Keep-it (Y/N)')),
+        delivered: date(pick(r, 'Date Delivered to RC')), processed: date(pick(r, 'Date Processed in RC')),
+        disp: clean(pick(r, 'Disposition Result (Latest)')).toUpperCase(), cond: clean(pick(r, 'Condition Result (Latest)')),
+        rtvDate: date(pick(r, 'RTV Ship Date')), rtvTrk: clean(pick(r, 'RTV Tracking ID')), rtvCarrier: clean(pick(r, 'RTV Carrier')),
+        shippedQty: clean(pick(r, 'Shipped qty to seller')), refund: num(pick(r, 'Refund Amount')), fee: num(pick(r, 'WFS Return Processing Fee')),
+      })).filter((r) => r.rma);
+      rows.forEach((r) => { r.k = r.rma + '|' + r.line; });
+    } else if (d.type === 'rtv') {
+      const occ = {};
+      rows = body.map((r) => {
+        const x = {
+          cart: clean(pick(r, 'Cart ID')), date: date(pick(r, 'Date Shipped')), gtin: gtin(pick(r, 'GTIN')),
+          item: clean(pick(r, 'Item Description')), qty: num(pick(r, 'Qty Shipped')) || 1,
+          carrier: clean(pick(r, 'Carrier')), trk: clean(pick(r, 'Tracking ID')),
+        };
+        const base = [x.trk || x.cart, x.gtin, x.date].join('|');
+        occ[base] = (occ[base] || 0) + 1;
+        x.k = base + '|' + occ[base];
+        return x;
+      }).filter((x) => x.trk || x.cart);
+    } else {
+      rows = body.map((r) => ({
+        ref: clean(pick(r, 'WFSReferenceID')), order: clean(pick(r, 'Walmart.com Order #')), line: clean(pick(r, 'Walmart.com Order Line #')),
+        po: clean(pick(r, 'Walmart.com PO #')), poLine: clean(pick(r, 'Walmart.com PO Line #')),
+        type: clean(pick(r, 'Transaction Type')), reason: clean(pick(r, 'Reason Code')), detail: clean(pick(r, 'Detail')),
+        date: date(pick(r, 'Transaction Date/Time')), qty: num(pick(r, 'Qty')), gtin: gtin(pick(r, 'Partner GTIN')),
+        item: clean(pick(r, 'Partner Item Name')), net: num(pick(r, 'Net Payable')), orig: num(pick(r, 'Original Amount')),
+        disc: num(pick(r, 'Discount Savings')),
+      })).filter((r) => r.type);
+      rows.forEach((r, i) => { r.k = r.ref || [r.type, r.order, r.line, r.date, r.net, i].join('|'); });
+    }
+    // Periodo declarado en la cabecera del settlement
+    let period = null;
+    if (d.type === 'settle') {
+      for (let i = 0; i < d.at; i++) {
+        const h = aoa[i].map((x) => clean(x).toLowerCase());
+        const j = h.indexOf('reportingperiod_startdate');
+        if (j >= 0 && aoa[i + 1]) period = { from: date(aoa[i + 1][j]), to: date(aoa[i + 1][j + 1]) };
+      }
+    }
+    return { type: d.type, rows, period };
+  }
+
+  function merge(existing, incoming) {
+    const m = new Map((existing || []).map((r) => [r.k, r]));
+    let added = 0;
+    for (const r of incoming) { if (!m.has(r.k)) added++; m.set(r.k, r); }
+    return { rows: [...m.values()], added };
+  }
+
+  const STATE = {
+    camino:      { label: 'En camino a Walmart', tone: 'info', bucket: 'camino' },
+    vencida:     { label: 'Nunca llegó a Walmart', tone: 'bad', bucket: 'recuperar' },
+    rtv_pend:    { label: 'Enviada a ti · confirma', tone: 'warn', bucket: 'confirmar' },
+    rtv_sincaja: { label: 'Dicen que la enviaron, sin caja', tone: 'warn', bucket: 'confirmar' },
+    rtv_ok:      { label: 'Te llegó', tone: 'ok', bucket: 'recuperado' },
+    rtv_falta:   { label: 'No te llegó', tone: 'bad', bucket: 'recuperar' },
+    restock:     { label: 'Volvió a tu inventario', tone: 'ok', bucket: 'recuperado' },
+    desechada:   { label: 'Walmart la desechó', tone: 'grey', bucket: 'perdido' },
+    wfs:         { label: 'Walmart la cubre', tone: 'info', bucket: 'cubre' },
+    pagada:      { label: 'Walmart te la pagó', tone: 'ok', bucket: 'recuperado' },
+    rec_abierto: { label: 'Reclamo abierto', tone: 'warn', bucket: 'recuperar' },
+    rec_pagado:  { label: 'Reclamo pagado', tone: 'ok', bucket: 'recuperado' },
+    rec_rechazo: { label: 'Reclamo rechazado', tone: 'bad', bucket: 'perdido' },
+  };
+  const BUCKETS = {
+    recuperar:  { label: 'Por reclamar', color: 'var(--bad)', desc: 'No llegaron o no te llegaron' },
+    confirmar:  { label: 'Por confirmar', color: 'var(--warn)', desc: 'Walmart dice que te las mandó' },
+    camino:     { label: 'En camino', color: 'var(--accent)', desc: 'El cliente aún no la entrega' },
+    cubre:      { label: 'Walmart la cubre', color: 'color-mix(in srgb, var(--accent) 45%, var(--bg))', desc: 'Culpa de WFS, no es pérdida tuya' },
+    recuperado: { label: 'Recuperado', color: 'var(--ok)', desc: 'Llegó, volvió o te pagaron' },
+    perdido:    { label: 'Perdido', color: 'var(--muted)', desc: 'Desechada o reclamo rechazado' },
+  };
+
+  function analyze(data, marks, cfg, today) {
+    const R = (data.returns || []).map((r) => ({ ...r }));
+    const V = (data.rtv || []).map((x) => ({ ...x }));
+    const S = (data.settle || []).map((x) => ({ ...x }));
+    const limit = cfg.dias || 45;
+
+    // 1. Unir cada devolución con su línea en una caja enviada a ti
+    const free = new Map();
+    for (const v of V) { const key = v.trk + '|' + v.gtin; if (!free.has(key)) free.set(key, []); free.get(key).push(v); }
+    const take = (pred) => { for (const [, arr] of free) { const i = arr.findIndex(pred); if (i >= 0) return arr.splice(i, 1)[0]; } return null; };
+    const rtvRet = R.filter((r) => r.disp === 'RTV').sort((a, b) => (a.rtvDate || '').localeCompare(b.rtvDate || ''));
+    for (const r of rtvRet) {
+      if (r.rtvTrk) { const arr = free.get(r.rtvTrk + '|' + r.gtin); if (arr && arr.length) { r.v = arr.shift(); continue; } }
+    }
+    for (const r of rtvRet) if (!r.v && r.rtvDate) r.v = take((v) => v.gtin === r.gtin && v.date === r.rtvDate);
+    for (const r of rtvRet) if (r.v) r.v.ret = r;
+
+    // 2. Reembolsos de Walmart por devoluciones perdidas (settlement)
+    const lostPaid = new Map();
+    for (const s of S) {
+      if (s.type === 'Refund' && /LostReturn/i.test(s.reason)) {
+        const m = s.detail.match(/RMA:\s*(\d+)/);
+        if (m) lostPaid.set(m[1], (lostPaid.get(m[1]) || 0) + -s.net);
+      }
+    }
+    const feesByOrder = new Map();
+    for (const s of S) if (s.type === 'ReturnProcessingFee' || s.type === 'RC_InventoryRTVFee') {
+      if (!feesByOrder.has(s.order)) feesByOrder.set(s.order, []); feesByOrder.get(s.order).push(s);
+    }
+
+    // 3. Estado de cada devolución
+    for (const r of R) {
+      r.days = days(r.date, today);
+      r.paid = lostPaid.get(r.rma) || 0;
+      r.feesCharged = (feesByOrder.get(r.order) || []).reduce((a, s) => a + s.net, 0);
+      const bm = r.v ? marks['box-' + (r.v.trk || r.v.cart)] : null;
+      let st;
+      if (r.paid > 0) st = 'pagada';
+      else if (r.fault === 'WFS') st = 'wfs';
+      else if (r.disp === 'RESTOCK') st = 'restock';
+      else if (r.disp === 'DISPOSE') st = 'desechada';
+      else if (r.disp === 'RTV') {
+        if (!r.v) st = 'rtv_sincaja';
+        else if (!bm || !bm.estado) st = 'rtv_pend';
+        else if (bm.estado === 'no_llego' || (bm.estado === 'incompleta' && (bm.faltan || []).includes(r.v.k))) st = 'rtv_falta';
+        else st = 'rtv_ok';
+      } else if (r.processed) st = 'rtv_sincaja';
+      else st = r.days != null && r.days > limit ? 'vencida' : 'camino';
+      r.base = st;
+      const rm = marks['ret-' + r.rma + '-' + r.line];
+      if (rm && rm.reclamo === 'abierto') st = 'rec_abierto';
+      if (rm && rm.reclamo === 'pagado') st = 'rec_pagado';
+      if (rm && rm.reclamo === 'rechazado') st = 'rec_rechazo';
+      r.mark = rm || null;
+      r.state = st;
+      r.bucket = STATE[st].bucket;
+    }
+
+    // 4. Cajas (lo que Walmart dice que te mandó)
+    const avgBy = new Map();
+    for (const r of R) if (r.refund > 0) { const a = avgBy.get(r.gtin) || [0, 0]; a[0] += r.refund; a[1]++; avgBy.set(r.gtin, a); }
+    const boxMap = new Map();
+    for (const v of V) {
+      const id = v.trk || v.cart;
+      if (!boxMap.has(id)) boxMap.set(id, { id, trk: v.trk, cart: v.cart, date: v.date, carrier: v.carrier, items: [] });
+      const a = avgBy.get(v.gtin);
+      v.value = v.ret ? v.ret.refund : (a ? a[0] / a[1] : 0);
+      v.estimated = !v.ret;
+      boxMap.get(id).items.push(v);
+    }
+    const boxes = [...boxMap.values()].sort((a, b) => b.date.localeCompare(a.date));
+    for (const b of boxes) {
+      b.mark = marks['box-' + b.id] || null;
+      b.value = b.items.reduce((a, v) => a + v.value, 0);
+      b.age = days(b.date, today);
+    }
+
+    // 5. Cobros de WFS y alertas
+    const byType = new Map();
+    for (const s of S) { const t = byType.get(s.type) || { type: s.type, n: 0, total: 0 }; t.n++; t.total += s.net; byType.set(s.type, t); }
+    const findings = [];
+    const dupKey = new Map();
+    for (const s of S) if (s.type === 'FulfillmentFee' || s.type === 'ReturnProcessingFee') {
+      const k = [s.type, s.order, s.line, s.poLine, s.date, s.net, s.reason].join('|');
+      if (!dupKey.has(k)) dupKey.set(k, []); dupKey.get(k).push(s);
+    }
+    for (const [, arr] of dupKey) if (arr.length > 1 && arr[0].order) {
+      const s = arr[0];
+      findings.push({
+        id: 'dup-' + s.order + '-' + s.line + '-' + s.type, kind: 'fee', sev: 'bad',
+        title: `Cargo de ${s.type === 'FulfillmentFee' ? 'envío WFS' : 'devolución'} repetido ${arr.length} veces`,
+        body: `Orden ${s.order}, línea ${s.line}, ${s.date}: ${arr.length} cargos iguales de $${s.net.toFixed(2)} (cantidad ${s.qty} cada uno) por ${short(s.item)}. Revisa en Seller Center cuántas unidades tenía esa línea. Si era un solo envío, te cobraron de más.`,
+        amount: s.net * (arr.length - 1), lines: arr,
+        claim: `Order ${s.order}, line ${s.line}: ${s.type} of $${s.net.toFixed(2)} (qty ${s.qty}) was charged ${arr.length} times on ${s.date} (reference IDs: ${arr.map((x) => x.ref).join(', ')}). Please verify and refund the duplicate charge(s): $${(s.net * (arr.length - 1)).toFixed(2)}.`,
+      });
+    }
+    for (const r of R) if (r.fault === 'WFS') {
+      const f = (feesByOrder.get(r.order) || []).filter((s) => s.type === 'ReturnProcessingFee' && s.gtin === r.gtin);
+      if (f.length) findings.push({
+        id: 'wfsfee-' + r.rma, kind: 'fee', sev: 'bad', title: 'Te cobraron cargo de devolución en una que es culpa de WFS',
+        body: `RMA ${r.rma} (${short(r.item)}) está marcada como culpa de WFS, pero el settlement tiene ${f.length} cargo(s) de devolución por esa orden.`,
+        amount: f.reduce((a, s) => a + s.net, 0),
+        claim: `RMA ${r.rma} (order ${r.order}) is marked Fault = WFS, but a Return Processing Fee of $${f.reduce((a, s) => a + s.net, 0).toFixed(2)} was charged. Please reverse it.`,
+      });
+    }
+    const lostInv = S.filter((s) => s.type === 'LostInventory'), found = S.filter((s) => s.type === 'FoundInventory');
+    for (const f of found) {
+      const l = lostInv.find((x) => Math.abs(-x.net - f.net) < 0.01);
+      findings.push({
+        id: 'found-' + f.k, kind: 'info', sev: 'warn', title: 'Walmart te pagó una unidad perdida y luego te la cobró de vuelta',
+        body: `El ${l ? l.date : '—'} te reembolsaron $${f.net.toFixed(2)} por inventario perdido y el ${f.date} te lo descontaron como "encontrado". Si la encontraron, esa unidad tiene que aparecer de nuevo en tu inventario de WFS. Revisa que esté y que se pueda vender.`,
+        amount: f.net,
+      });
+    }
+    const paidLost = S.filter((s) => s.type === 'Refund' && /LostReturn/i.test(s.reason));
+    if (paidLost.length) findings.push({
+      id: 'lostpaid', kind: 'info', sev: 'ok', title: `Walmart sí te pagó ${paidLost.length} devoluciones perdidas`,
+      body: `Llegaron como "LostReturnAdjustment" entre ${minmax(paidLost.map((s) => s.date))}, unos 60 a 100 días después de que se le reembolsó al cliente. Así que Walmart sí paga las perdidas, pero tarda. Por eso las que pasan de ${limit} días hay que vigilarlas y reclamarlas.`,
+      amount: -paidLost.reduce((a, s) => a + s.net, 0), credit: true,
+    });
+
+    // Devoluciones: alertas por estado
+    const venc = R.filter((r) => r.state === 'vencida');
+    if (venc.length) findings.unshift({
+      id: 'venc', kind: 'ret', sev: 'bad', title: `${venc.length} devoluciones nunca llegaron a Walmart (más de ${limit} días)`,
+      body: `Al cliente ya le devolvieron el dinero y el producto no aparece procesado en ningún centro de devoluciones. Las más viejas: ${venc.sort((a, b) => b.days - a.days).slice(0, 3).map((r) => `${short(r.item)} (${r.days} días)`).join(', ')}.`,
+      amount: sum(venc, 'refund'), go: 'reclamos',
+    });
+    const sinCaja = R.filter((r) => r.state === 'rtv_sincaja');
+    if (sinCaja.length) findings.push({
+      id: 'sincaja', kind: 'ret', sev: 'warn', title: `${sinCaja.length} devoluciones "enviadas a ti" que no aparecen en ninguna caja`,
+      body: 'El reporte de devoluciones dice que te las mandaron (RTV), pero el reporte de lo que te enviaron no las tiene. Si son recientes pueden ir en camino. Si pasan de 2 semanas, hay que reclamarlas.',
+      amount: sum(sinCaja, 'refund'), go: 'devoluciones:rtv_sincaja',
+    });
+    const pendBoxes = boxes.filter((b) => !b.mark || !b.mark.estado);
+    if (pendBoxes.length) findings.push({
+      id: 'boxes', kind: 'box', sev: 'warn', title: `${pendBoxes.length} cajas por confirmar si te llegaron`,
+      body: 'Walmart dice que te mandó estas cajas por FedEx. Solo tú sabes si llegaron completas. Márcalas en la pestaña Cajas y las que falten pasan solas a Reclamos.',
+      amount: pendBoxes.reduce((a, b) => a + b.value, 0), go: 'cajas',
+    });
+    const nonSell = R.filter((r) => r.processed && r.cond);
+    const ns = nonSell.filter((r) => /non/i.test(r.cond)).length;
+    if (nonSell.length >= 5 && ns / nonSell.length > 0.8) findings.push({
+      id: 'nonsell', kind: 'info', sev: 'warn', title: `Walmart marcó como "no vendible" ${ns} de ${nonSell.length} devoluciones procesadas`,
+      body: 'Es una proporción muy alta. Cuando abras las cajas, revisa si los productos vienen nuevos o sellados. Si vienen bien, pudieron haber vuelto a tu inventario de WFS en vez de mandártelos (y cobrarte el envío).',
+      amount: null,
+    });
+    const wfsR = R.filter((r) => r.state === 'wfs');
+    if (wfsR.length) findings.push({
+      id: 'wfscover', kind: 'info', sev: 'info', title: `${wfsR.length} devoluciones las cubre Walmart (culpa de WFS)`,
+      body: 'El reporte dice que la culpa es de WFS (perdidas en envío, dañadas, item incorrecto). Para confirmar que no te descontaron ese reembolso hace falta el reporte de pagos (Payments → Reconciliation report). Cuando lo cargues, se cruza solo.',
+      amount: sum(wfsR, 'refund'), go: 'devoluciones:wfs',
+    });
+
+    // 6. Totales por grupo
+    const buckets = {};
+    for (const k of Object.keys(BUCKETS)) buckets[k] = { n: 0, amt: 0 };
+    for (const r of R) { buckets[r.bucket].n++; buckets[r.bucket].amt += r.refund; }
+    const feeAlerts = findings.filter((f) => f.kind === 'fee').reduce((a, f) => a + (f.amount || 0), 0);
+
+    // 7. Reclamos
+    const claims = [];
+    for (const r of R) {
+      if (r.state === 'vencida') claims.push({ id: 'ret-' + r.k, group: 'noRC', amount: r.refund, ret: r });
+      if (r.state === 'rtv_falta') claims.push({ id: 'ret-' + r.k, group: 'noBox', amount: r.refund, ret: r });
+      if (r.state === 'rtv_sincaja' && days(r.rtvDate || r.processed, today) > 14) claims.push({ id: 'ret-' + r.k, group: 'noShip', amount: r.refund, ret: r });
+    }
+    for (const b of boxes) if (b.mark && (b.mark.estado === 'no_llego' || b.mark.estado === 'incompleta')) {
+      for (const v of b.items) if (!v.ret && (b.mark.estado === 'no_llego' || (b.mark.faltan || []).includes(v.k)))
+        claims.push({ id: 'rtv-' + v.k, group: 'noBox', amount: v.value, rtv: v, box: b });
+    }
+    for (const f of findings) if (f.kind === 'fee') claims.push({ id: f.id, group: 'fees', amount: f.amount, finding: f });
+
+    const range = (arr, f) => minmax(arr.map(f).filter(Boolean));
+    return {
+      returns: R, rtv: V, settle: S, boxes, byType: [...byType.values()].sort((a, b) => b.total - a.total), findings, buckets, feeAlerts, claims, limit,
+      coverage: {
+        returns: R.length ? range(R, (r) => r.date) : null,
+        rtv: V.length ? range(V, (v) => v.date) : null,
+        settle: S.length ? (data.settlePeriod ? data.settlePeriod.from + ' – ' + data.settlePeriod.to : range(S, (s) => s.date)) : null,
+      },
+      totals: { refund: sum(R, 'refund'), fee: sum(R, 'fee'), charges: S.filter((s) => s.net > 0).reduce((a, s) => a + s.net, 0), credits: -S.filter((s) => s.net < 0).reduce((a, s) => a + s.net, 0) },
+    };
+  }
+  function sum(a, f) { return a.reduce((x, r) => x + (r[f] || 0), 0); }
+  function short(s) { s = s || 'producto'; return s.length > 38 ? s.slice(0, 36).trim() + '…' : s; }
+  function minmax(ds) { const s = [...ds].sort(); return s.length ? (s[0] === s[s.length - 1] ? s[0] : s[0] + ' – ' + s[s.length - 1]) : ''; }
+
+  function claimText(items, limit) {
+    const g = (k) => items.filter((c) => c.group === k);
+    const $ = (n) => '$' + (n || 0).toFixed(2);
+    const G = (n) => n.padStart(14, '0');
+    let sec = 0;
+    const out = ['Subject: WFS – reimbursement request for customer returns and charges', '', 'Hello WFS Support,', '',
+      'After reconciling our Customer Returns, Return to Seller and Settlement reports, we found the following items that require investigation and reimbursement:', ''];
+    const noRC = g('noRC');
+    if (noRC.length) {
+      out.push(`${++sec}) Customer returns refunded to the customer but never received at a Return Center (more than ${limit} days since initiation):`);
+      for (const c of noRC) { const r = c.ret; out.push(`   - RMA ${r.rma} | Order ${r.order} | SKU ${r.sku} | GTIN ${G(r.gtin)} | Qty ${r.qty} | Initiated ${r.date} (${r.days} days) | Return tracking ${r.trk || 'N/A'} | Refund ${$(r.refund)}`); }
+      out.push(`   Subtotal: ${$(noRC.reduce((a, c) => a + c.amount, 0))}`, '');
+    }
+    const noBox = g('noBox');
+    if (noBox.length) {
+      out.push(`${++sec}) Units reported as shipped back to us (Return to Seller) that we did not receive:`);
+      for (const c of noBox) {
+        const v = c.rtv || c.ret.v; const r = c.ret;
+        out.push(`   - Tracking ${v ? v.trk : r.rtvTrk} | Shipped ${v ? v.date : r.rtvDate} | GTIN ${G(v ? v.gtin : r.gtin)} | ${short(v ? v.item : r.item)}${r ? ` | RMA ${r.rma} | Order ${r.order}` : ''} | Value ${$(c.amount)}${c.rtv && c.rtv.estimated ? ' (est.)' : ''}`);
+      }
+      out.push(`   Subtotal: ${$(noBox.reduce((a, c) => a + c.amount, 0))}`, '');
+    }
+    const noShip = g('noShip');
+    if (noShip.length) {
+      out.push(`${++sec}) Returns with disposition RTV / processed at the Return Center, but no Return to Seller shipment exists for them:`);
+      for (const c of noShip) { const r = c.ret; out.push(`   - RMA ${r.rma} | Order ${r.order} | SKU ${r.sku} | Processed ${r.processed || 'N/A'} | RTV date ${r.rtvDate || 'N/A'} | RTV tracking ${r.rtvTrk || 'N/A'} | Refund ${$(r.refund)}`); }
+      out.push(`   Subtotal: ${$(noShip.reduce((a, c) => a + c.amount, 0))}`, '');
+    }
+    const fees = g('fees');
+    if (fees.length) {
+      out.push(`${++sec}) Charges in the WFS Settlement report that appear incorrect:`);
+      for (const c of fees) out.push('   - ' + c.finding.claim);
+      out.push('');
+    }
+    out.push(`Total requested: ${$(items.reduce((a, c) => a + (c.amount || 0), 0))}`, '', 'Please confirm the status of each item and process the corresponding reimbursements.', '', 'Thank you,', 'Levam Corp');
+    return out.join('\n');
+  }
+
+  return { parseCSV, normalize, merge, analyze, claimText, STATE, BUCKETS, LABEL, clean, date };
+})();
+// CORE-END
+</script>
+
+<script>
+// Almacenamiento: base de datos del artifact si existe; si no, el navegador
+const CHUNK = 150;
+const Store = {
+  mode: 'local', db: null, canWrite: true, listeners: [],
+  data: { returns: [], rtv: [], settle: [], settlePeriod: null }, marks: {}, cfg: { dias: 45 }, ready: false,
+  emit() { this.listeners.forEach((f) => f()); },
+  async init() {
+    let db = null, user = null;
+    try { if (window.claude && window.claude.use) { db = await window.claude.use('db'); user = await window.claude.use('user'); } } catch (e) { db = null; }
+    if (db) {
+      this.mode = 'db'; this.db = db;
+      try { this.canWrite = user ? await user.canEdit() : true; } catch (e) { this.canWrite = true; }
+      this.subscribe();
+    } else {
+      this.mode = 'local';
+      try {
+        const s = JSON.parse(localStorage.getItem('wfs-control') || 'null');
+        if (s) { this.data = s.data || this.data; this.marks = s.marks || {}; this.cfg = s.cfg || this.cfg; }
+      } catch (e) {}
+      this.ready = true; this.emit();
+    }
+  },
+  subscribe() {
+    let gotChunks = false, gotMarks = false;
+    const done = () => { if (gotChunks && gotMarks && !this.ready) { this.ready = true; } this.emit(); };
+    this.db.collection('chunks').onSnapshot((snap) => {
+      const by = {};
+      snap.docs.forEach((d) => { const x = d.data(); if (!x) return; (by[x.type] = by[x.type] || []).push(x); });
+      for (const t of ['returns', 'rtv', 'settle']) {
+        const arr = by[t] || [];
+        const v = arr.reduce((m, x) => Math.max(m, x.v || 0), 0);
+        const cur = arr.filter((x) => x.v === v).sort((a, b) => a.idx - b.idx);
+        if (!cur.length) { this.data[t] = []; continue; }
+        if (cur.length < cur[0].total) continue; // todavía llegando
+        this.data[t] = cur.flatMap((x) => x.rows);
+        if (t === 'settle') this.data.settlePeriod = cur[0].period || null;
+      }
+      gotChunks = true; done();
+    }, (e) => { gotChunks = true; showToast('No se pudieron leer los reportes guardados (' + e.code + ').'); done(); });
+    this.db.collection('marks').onSnapshot((snap) => {
+      const m = {};
+      snap.docs.forEach((d) => { m[d.id] = d.data(); });
+      this.marks = m; gotMarks = true; done();
+    }, () => { gotMarks = true; done(); });
+    this.db.doc('meta/config').onSnapshot((d) => { if (d.exists) this.cfg = { ...this.cfg, ...d.data() }; this.emit(); });
+  },
+  persistLocal() {
+    try { localStorage.setItem('wfs-control', JSON.stringify({ data: this.data, marks: this.marks, cfg: this.cfg })); } catch (e) { showToast('El navegador no dejó guardar los datos.'); }
+  },
+  async saveReport(type, rows, period) {
+    if (this.mode === 'local') {
+      this.data[type] = rows; if (type === 'settle') this.data.settlePeriod = period; this.persistLocal(); this.emit(); return;
+    }
+    const v = Date.now(), total = Math.max(1, Math.ceil(rows.length / CHUNK));
+    const col = this.db.collection('chunks');
+    const old = (await col.where('type', '==', type).get()).docs.map((d) => d.id);
+    for (let i = 0; i < total; i++) {
+      await col.doc(`${type}-${v}-${i}`).set({ type, v, idx: i, total, period: period || null, rows: rows.slice(i * CHUNK, (i + 1) * CHUNK) });
+    }
+    for (const id of old) await col.doc(id).delete();
+  },
+  async saveMark(id, val) {
+    if (this.mode === 'local') { if (val) this.marks[id] = val; else delete this.marks[id]; this.persistLocal(); this.emit(); return; }
+    if (val) { this.marks[id] = val; this.emit(); await this.db.doc('marks/' + id).set(val); }
+    else { delete this.marks[id]; this.emit(); await this.db.doc('marks/' + id).delete(); }
+  },
+  async saveCfg(cfg) {
+    this.cfg = { ...this.cfg, ...cfg };
+    if (this.mode === 'local') { this.persistLocal(); this.emit(); return; }
+    this.emit(); await this.db.doc('meta/config').set(this.cfg);
+  },
+  async clearAll() {
+    if (this.mode === 'local') { this.data = { returns: [], rtv: [], settle: [], settlePeriod: null }; this.marks = {}; this.persistLocal(); this.emit(); return; }
+    for (const c of ['chunks', 'marks']) { const s = await this.db.collection(c).get(); for (const d of s.docs) await this.db.collection(c).doc(d.id).delete(); }
+  },
+};
+
+// Interfaz
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = (n, d = 2) => (n < 0 ? '−' : '') + '$' + Math.abs(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtDate = (s) => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${+d} ${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+m - 1]} ${y.slice(2)}`; };
+const today = () => new Date().toISOString().slice(0, 10);
+const REASON = { Change_Mind: 'Cambió de opinión', Defective: 'Defectuoso', Incorrect_Item: 'Item incorrecto', Lost: 'Perdido en envío', Damage: 'Dañado' };
+const TYPE_ES = {
+  FulfillmentFee: 'Cargo de envío WFS', ReturnProcessingFee: 'Cargo por procesar devolución', RC_InventoryRTVFee: 'Cargo por regresarte la devolución',
+  Refund: 'Reembolso de Walmart a ti', InboundTransportationFee: 'Transporte de entrada a WFS', LostInventory: 'Inventario perdido (te pagan)',
+  FoundInventory: 'Inventario encontrado (te descuentan)', StorageFee: 'Almacenamiento',
+};
+const TABS = [['resumen', 'Resumen'], ['devoluciones', 'Devoluciones'], ['cajas', 'Cajas que te mandaron'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
+const ui = { tab: 'resumen', retFilter: 'todas', q: '', limit: 60, boxFilter: 'pend', setFilter: 'todos', sel: null, confirmClear: false, log: [] };
+let M = null;
+
+function showToast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 2600); }
+function pill(st) { const s = Core.STATE[st]; return `<span class="pill t-${s.tone}">${esc(s.label)}</span>`; }
+function short(s, n = 46) { s = s || ''; return s.length > n ? s.slice(0, n - 1).trim() + '…' : s; }
+function go(target) { const [tab, f] = target.split(':'); ui.tab = tab; if (tab === 'devoluciones') { ui.retFilter = f || 'todas'; ui.limit = 60; } try { history.replaceState(null, '', '#' + tab); } catch (e) {} render(); window.scrollTo({ top: 0 }); }
+
+function render() {
+  if (!Store.ready) { $('#view').innerHTML = `<div class="empty">Cargando tus reportes…</div>`; return; }
+  M = Core.analyze(Store.data, Store.marks, Store.cfg, today());
+  const cov = M.coverage;
+  $('#coverage').innerHTML = [['Devoluciones', cov.returns], ['Enviado a ti', cov.rtv], ['Settlement', cov.settle]]
+    .map(([l, r]) => `<span class="chip">${l} <b class="num">${r ? esc(r.split(' – ').map(fmtDate).join(' – ')) : 'sin cargar'}</b></span>`).join('');
+  $('#mode').textContent = Store.mode === 'db' ? (Store.canWrite ? 'Guardado en la nube' : 'Solo lectura') : 'Guardado en este navegador';
+  const nClaims = M.claims.length;
+  const nBoxes = M.boxes.filter((b) => !b.mark || !b.mark.estado).length;
+  $('#tabs').innerHTML = TABS.map(([id, l]) => {
+    const c = id === 'reclamos' && nClaims ? `<span class="count">${nClaims}</span>` : id === 'cajas' && nBoxes ? `<span class="count" style="background:var(--warn-dim);color:var(--warn)">${nBoxes}</span>` : '';
+    return `<button role="tab" id="tab-${id}" aria-selected="${ui.tab === id}" data-tab="${id}">${l}${c}</button>`;
+  }).join('');
+  const hasData = M.returns.length || M.rtv.length || M.settle.length;
+  const v = $('#view');
+  if (!hasData && ui.tab !== 'cargar') { v.innerHTML = emptyState(); return; }
+  v.innerHTML = ({ resumen: vResumen, devoluciones: vDevoluciones, cajas: vCajas, cobros: vCobros, reclamos: vReclamos, cargar: vCargar })[ui.tab]();
+  if (ui.tab === 'reclamos') updateClaimText();
+}
+
+function emptyState() {
+  return `<div class="empty"><h2>Todavía no hay reportes cargados</h2>
+  <p class="prose">Descarga de Seller Center los reportes de <b>Customer Returns</b>, <b>Return to Seller</b> y <b>Settlement</b> de WFS y súbelos aquí. La herramienta los cruza y te dice cuánto dinero tienes por reclamar.</p>
+  <button class="btn primary" data-go="cargar">Cargar reportes</button></div>`;
+}
+
+function vResumen() {
+  const B = M.buckets, BD = Core.BUCKETS;
+  const recuperar = B.recuperar.amt + M.feeAlerts;
+  const order = ['recuperar', 'confirmar', 'camino', 'cubre', 'recuperado', 'perdido'];
+  const total = order.reduce((a, k) => a + B[k].amt, 0) || 1;
+  const sevColor = { bad: 'var(--bad)', warn: 'var(--warn)', ok: 'var(--ok)', info: 'var(--accent)' };
+  return `
+  <section class="hero">
+    <div class="hero-main">
+      <span class="label" style="color:var(--bad)">Dinero por reclamar</span>
+      <span class="big">${money(recuperar)}</span>
+      <p>Devoluciones que nunca llegaron o que no te llegaron (${B.recuperar.n}), más ${money(M.feeAlerts)} en cobros que parecen repetidos o incorrectos.</p>
+      <div class="row" style="margin-top:8px"><button class="btn primary small" data-go="reclamos">Armar reclamo</button>
+      <span class="muted" style="font-size:12px">+ ${money(B.confirmar.amt)} por confirmar</span></div>
+    </div>
+    <div class="buckets">
+      ${order.map((k) => `<button class="bucket" data-go="devoluciones:${k}">
+        <span class="head"><i class="dot" style="background:${BD[k].color}"></i>${BD[k].label}</span>
+        <span class="amt">${money(B[k].amt, 0)}</span>
+        <span class="sub">${B[k].n} devoluciones · ${BD[k].desc}</span></button>`).join('')}
+    </div>
+  </section>
+  ${last30()}
+  <div class="bar-block">
+    <div class="row" style="justify-content:space-between"><span class="label">Las ${M.returns.length} devoluciones: ${money(M.totals.refund)} reembolsados al cliente</span>
+    <span class="label">Cargos por devolución en el reporte: <span class="num">${money(M.totals.fee)}</span></span></div>
+    <div class="bar" role="img" aria-label="Reparto del dinero en devoluciones">${order.filter((k) => B[k].amt > 0).map((k) => `<span title="${BD[k].label}: ${money(B[k].amt)}" style="width:${(B[k].amt / total * 100).toFixed(2)}%;background:${BD[k].color}"></span>`).join('')}</div>
+    <div class="bar-legend">${order.filter((k) => B[k].amt > 0).map((k) => `<span><i class="dot" style="background:${BD[k].color}"></i>${BD[k].label} ${Math.round(B[k].amt / total * 100)}%</span>`).join('')}</div>
+  </div>
+  <section class="section">
+    <div class="section-head"><h2>Lo que encontramos al cruzar los reportes</h2><span class="muted" style="font-size:12px">Ordenado por urgencia</span></div>
+    <div class="findings">${M.findings.map((f) => `
+      <div class="finding"><span class="stripe" style="background:${sevColor[f.sev]}"></span>
+        <div><h3>${esc(f.title)}</h3><p>${esc(f.body)}</p>${f.go ? `<div class="act"><button class="btn small" data-go="${f.go}">Ver detalle</button></div>` : ''}</div>
+        <div class="amt" style="color:${f.credit ? 'var(--ok)' : f.sev === 'bad' ? 'var(--bad)' : 'var(--fg)'}">${f.amount == null ? '' : (f.credit ? '+' : '') + money(f.amount)}</div>
+      </div>`).join('') || '<div class="finding"><span></span><p>No hay alertas.</p></div>'}
+    </div>
+  </section>
+  ${!M.settle.length || (M.coverage.settle && M.coverage.returns && M.coverage.settle.split(' – ').pop() < M.coverage.returns.split(' – ').pop()) ? `
+  <section class="section"><div class="findings"><div class="finding"><span class="stripe" style="background:var(--muted)"></span><div>
+    <h3>Faltan meses de settlement</h3><p>Tus devoluciones llegan hasta ${fmtDate((M.coverage.returns || '').split(' – ').pop())}, pero el settlement solo cubre ${M.coverage.settle ? esc(M.coverage.settle.split(' – ').map(fmtDate).join(' – ')) : 'nada todavía'}. Carga el settlement de las fechas que faltan para revisar esos cobros también. Además, el <b>Reconciliation report</b> de Payments sirve para confirmar qué devoluciones te descontaron del pago.</p>
+    <div class="act"><button class="btn small" data-go="cargar">Cargar reportes</button></div></div></div></div></section>` : ''}`;
+}
+
+function last30() {
+  const L = M.returns.filter((r) => r.days != null && r.days <= 30);
+  if (!L.length) return '';
+  const by = (k) => L.filter((r) => r.bucket === k);
+  const top = Object.values(L.reduce((m, r) => { const x = m[r.sku] || (m[r.sku] = { sku: r.sku, n: 0, amt: 0 }); x.n++; x.amt += r.refund; return m; }, {})).sort((a, b) => b.amt - a.amt).slice(0, 3);
+  return `<section class="section"><div class="findings"><div class="finding"><span class="stripe" style="background:var(--accent)"></span><div>
+    <h3>Últimos 30 días: ${L.length} devoluciones, ${money(L.reduce((a, r) => a + r.refund, 0))} reembolsados</h3>
+    <p>${money(by('camino').reduce((a, r) => a + r.refund, 0))} siguen en camino, ${money(by('confirmar').reduce((a, r) => a + r.refund, 0))} dicen que te las mandaron y ${money(by('cubre').reduce((a, r) => a + r.refund, 0))} las cubre Walmart. Lo que más se devuelve: ${top.map((t) => `${esc(t.sku)} (${t.n}, ${money(t.amt, 0)})`).join(', ')}.</p>
+    <div class="act"><button class="btn small" data-go="devoluciones:camino">Ver las que van en camino</button></div></div>
+    <div class="amt">${money(L.reduce((a, r) => a + r.refund, 0))}</div></div></div></section>`;
+}
+
+function vDevoluciones() {
+  const R = M.returns;
+  const groups = [['todas', 'Todas', R], ...Object.entries(Core.BUCKETS).map(([k, b]) => [k, b.label, R.filter((r) => r.bucket === k)])];
+  let list = ui.retFilter in Core.STATE ? R.filter((r) => r.state === ui.retFilter) : (groups.find((g) => g[0] === ui.retFilter) || groups[0])[2];
+  const q = ui.q.trim().toLowerCase();
+  if (q) list = list.filter((r) => [r.rma, r.order, r.sku, r.item, r.trk, r.rtvTrk, r.gtin].join(' ').toLowerCase().includes(q));
+  list = [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const shown = list.slice(0, ui.limit);
+  const extra = ui.retFilter in Core.STATE ? [[ui.retFilter, Core.STATE[ui.retFilter].label, list]] : [];
+  return `
+  <div class="toolbar">
+    <div class="filters">${[...groups, ...extra].map(([k, l, arr]) => `<button class="filter" aria-pressed="${ui.retFilter === k}" data-rf="${k}">${l} <span class="num">${arr.length}</span></button>`).join('')}</div>
+    <input class="search" id="q" type="search" placeholder="Buscar orden, RMA, SKU, tracking…" value="${esc(ui.q)}">
+    <button class="btn small" id="export">Exportar CSV</button>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Estado</th><th>Iniciada</th><th>Producto</th><th>Motivo · culpa</th><th>Dónde está</th><th class="r">Reembolso</th></tr></thead>
+    <tbody>${shown.map((r) => `<tr class="click" data-ret="${esc(r.k)}">
+      <td>${pill(r.state)}</td>
+      <td class="num">${fmtDate(r.date)}<div class="sku">${r.days != null ? r.days + ' días' : ''}</div></td>
+      <td><div class="item" title="${esc(r.item)}">${esc(short(r.item))}</div><div class="sku">${esc(r.sku)} · RMA ${esc(r.rma)}</div></td>
+      <td>${esc(REASON[r.reason] || r.reason)}<div class="sku">${r.fault === 'WFS' ? 'Culpa WFS' : 'Culpa vendedor'}</div></td>
+      <td style="font-size:12px">${esc(where(r))}</td>
+      <td class="r num">${money(r.refund)}${r.paid ? `<div class="sku" style="color:var(--ok)">pagado ${money(r.paid)}</div>` : ''}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">Nada con ese filtro.</td></tr>`}
+    </tbody></table></div>
+  ${list.length > shown.length ? `<div class="more"><button class="btn small" id="more">Mostrar ${Math.min(60, list.length - shown.length)} más (${list.length - shown.length} restantes)</button></div>` : ''}
+  <div class="muted" style="font-size:12px;margin-top:8px">${list.length} devoluciones · ${money(list.reduce((a, r) => a + r.refund, 0))}</div>`;
+}
+function where(r) {
+  if (r.v) return `Caja ${r.v.trk || r.v.cart} · enviada ${fmtDate(r.v.date)}`;
+  if (r.disp === 'RTV') return `Walmart dice que te la mandó ${fmtDate(r.rtvDate)}, pero no está en ninguna caja`;
+  if (r.disp === 'DISPOSE') return `Desechada en centro de devoluciones ${fmtDate(r.processed)}`;
+  if (r.disp === 'RESTOCK') return `Regresó a inventario WFS ${fmtDate(r.processed)}`;
+  if (r.processed) return `Procesada ${fmtDate(r.processed)} sin destino`;
+  const t = { 'Received in Store': 'Entregada en tienda Walmart, no llegó al centro', 'In transit to Return Center': 'En tránsito al centro de devoluciones', 'Arrived at Return Center': 'Llegó al centro, sin procesar', 'Return Initiated': 'Cliente inició la devolución', deliveredToRC: 'Entregada al centro, sin procesar' }[r.trkStatus];
+  return t || (r.trk ? `Sin movimiento · tracking ${r.trk}` : 'Sin tracking ni movimiento');
+}
+
+function vCajas() {
+  const all = M.boxes;
+  const f = { pend: ['Por confirmar', (b) => !b.mark || !b.mark.estado], prob: ['Con problema', (b) => b.mark && (b.mark.estado === 'no_llego' || b.mark.estado === 'incompleta')], ok: ['Llegaron completas', (b) => b.mark && b.mark.estado === 'completa'], todas: ['Todas', () => true] };
+  const list = all.filter(f[ui.boxFilter][1]);
+  if (!all.length) return `<div class="empty"><h2>No has cargado el reporte Return to Seller</h2><p class="prose">Es el reporte de lo que Walmart dice que te mandó de vuelta. Cárgalo y aquí aparecen las cajas con su tracking para que confirmes cuáles te llegaron.</p><button class="btn primary" data-go="cargar">Cargar reportes</button></div>`;
+  return `
+  <p class="prose" style="margin:0 0 14px">Walmart dice que te mandó estas <b>${all.length} cajas</b> (${all.reduce((a, b) => a + b.items.length, 0)} productos). Busca cada tracking en FedEx o en tu bodega y márcala. Si falta algo, pasa solo a Reclamos. Los valores con ≈ son un estimado: ese producto no aparece en tu reporte de devoluciones, así que se usa el promedio que reembolsaste por el mismo producto.</p>
+  <div class="toolbar"><div class="filters">${Object.entries(f).map(([k, [l, fn]]) => `<button class="filter" aria-pressed="${ui.boxFilter === k}" data-bf="${k}">${l} <span class="num">${all.filter(fn).length}</span></button>`).join('')}</div></div>
+  <div class="boxes">${list.map(boxCard).join('') || '<div class="empty">Nada en este grupo.</div>'}</div>`;
+}
+function boxCard(b) {
+  const st = (b.mark && b.mark.estado) || '';
+  const faltan = (b.mark && b.mark.faltan) || [];
+  const dis = Store.canWrite ? '' : 'disabled';
+  return `<article class="box st-${st}" data-box="${esc(b.id)}">
+    <div class="box-head"><div><div class="trk">${esc(b.trk || b.cart)}</div><div class="sku">${esc(b.carrier || '')} · enviada ${fmtDate(b.date)} · hace ${b.age} días</div></div>
+    <div class="num" style="font-weight:500">${money(b.value)}</div></div>
+    <ul>${b.items.map((v) => `<li class="${st === 'incompleta' && faltan.includes(v.k) ? 'missing' : ''}">
+      ${st === 'incompleta' ? `<input type="checkbox" aria-label="Falta este producto" data-miss="${esc(v.k)}" ${faltan.includes(v.k) ? 'checked' : ''} ${dis}>` : '<span class="sku">1×</span>'}
+      <span class="t" title="${esc(v.item)}">${esc(v.item)}${v.ret ? '' : ' <span class="sku">· no está en devoluciones</span>'}</span>
+      <span class="num sku">${v.value ? (v.estimated ? '≈' : '') + money(v.value, 0) : '—'}</span></li>`).join('')}</ul>
+    ${st === 'incompleta' ? '<div class="note">Marca los productos que faltaron.</div>' : ''}
+    <div class="acts">
+      <button class="btn small ${st === 'completa' ? 'on-ok' : ''}" data-bs="completa" ${dis}>Llegó completa</button>
+      <button class="btn small ${st === 'incompleta' ? 'on-warn' : ''}" data-bs="incompleta" ${dis}>Faltan cosas</button>
+      <button class="btn small ${st === 'no_llego' ? 'on-bad' : ''}" data-bs="no_llego" ${dis}>No llegó</button>
+      ${st ? `<button class="btn small" data-bs="" ${dis}>Deshacer</button>` : ''}
+    </div></article>`;
+}
+
+function vCobros() {
+  if (!M.settle.length) return `<div class="empty"><h2>No has cargado el settlement</h2><p class="prose">Es el reporte de cargos y reembolsos de WFS. Con él revisamos cobros repetidos y lo que Walmart ya te pagó.</p><button class="btn primary" data-go="cargar">Cargar reportes</button></div>`;
+  const types = M.byType;
+  let rows = ui.setFilter === 'todos' ? M.settle : M.settle.filter((s) => s.type === ui.setFilter);
+  rows = [...rows].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const shown = rows.slice(0, ui.limit);
+  const fees = M.findings.filter((f) => f.kind === 'fee' || f.id.startsWith('found'));
+  return `
+  <div class="buckets" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:20px">
+    <div class="bucket"><span class="head">Te cobraron</span><span class="amt">${money(M.totals.charges)}</span><span class="sub">${M.settle.filter((s) => s.net > 0).length} cargos de WFS</span></div>
+    <div class="bucket"><span class="head">Te devolvieron</span><span class="amt" style="color:var(--ok)">${money(M.totals.credits)}</span><span class="sub">Reembolsos por pérdidas y disputas</span></div>
+    <div class="bucket"><span class="head">Cobros a revisar</span><span class="amt" style="color:var(--bad)">${money(M.feeAlerts)}</span><span class="sub">${fees.filter((f) => f.kind === 'fee').length} posibles errores</span></div>
+  </div>
+  <p class="prose" style="margin:0 0 14px">En este reporte, un monto positivo es lo que WFS te cobra y uno negativo es lo que te devuelve. Periodo: ${esc((M.coverage.settle || '').split(' – ').map(fmtDate).join(' – '))}.</p>
+  ${fees.length ? `<div class="findings" style="margin-bottom:20px">${fees.map((f) => `<div class="finding"><span class="stripe" style="background:${f.sev === 'bad' ? 'var(--bad)' : 'var(--warn)'}"></span><div><h3>${esc(f.title)}</h3><p>${esc(f.body)}</p></div><div class="amt">${money(f.amount)}</div></div>`).join('')}</div>` : ''}
+  <div class="table-wrap" style="margin-bottom:20px"><table><thead><tr><th>Tipo de movimiento</th><th class="r">Movimientos</th><th class="r">Total</th></tr></thead>
+  <tbody>${types.map((t) => `<tr class="click" data-sf="${esc(t.type)}"><td>${esc(TYPE_ES[t.type] || t.type)}<div class="sku">${esc(t.type)}</div></td><td class="r num">${t.n}</td><td class="r num" style="color:${t.total < 0 ? 'var(--ok)' : 'var(--fg)'}">${money(t.total)}</td></tr>`).join('')}</tbody></table></div>
+  <div class="toolbar"><div class="filters"><button class="filter" aria-pressed="${ui.setFilter === 'todos'}" data-sf="todos">Todos <span class="num">${M.settle.length}</span></button>
+  ${types.map((t) => `<button class="filter" aria-pressed="${ui.setFilter === t.type}" data-sf="${esc(t.type)}">${esc(TYPE_ES[t.type] || t.type)} <span class="num">${t.n}</span></button>`).join('')}</div></div>
+  <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Orden</th><th>Producto</th><th class="r">Cant.</th><th class="r">Monto</th></tr></thead>
+  <tbody>${shown.map((s) => `<tr><td class="num">${fmtDate(s.date)}</td><td>${esc(TYPE_ES[s.type] || s.type)}<div class="sku">${esc(s.reason || s.detail)}</div></td>
+    <td class="num" style="font-size:12px">${esc(s.order || '—')}${s.line ? ' · ' + esc(s.line) : ''}</td><td><div class="item" title="${esc(s.item)}">${esc(short(s.item || s.detail, 40))}</div></td>
+    <td class="r num">${s.qty}</td><td class="r num" style="color:${s.net < 0 ? 'var(--ok)' : 'var(--fg)'}">${money(s.net)}</td></tr>`).join('')}</tbody></table></div>
+  ${rows.length > shown.length ? `<div class="more"><button class="btn small" id="more">Mostrar más (${rows.length - shown.length} restantes)</button></div>` : ''}`;
+}
+
+const GROUP = { noRC: 'Nunca llegaron a Walmart', noBox: 'Walmart dice que te las mandó y no te llegaron', noShip: 'Procesadas, pero sin caja de envío a ti', fees: 'Cobros incorrectos o repetidos' };
+function vReclamos() {
+  const C = M.claims;
+  if (!ui.claimSel) ui.claimSel = new Set(C.map((c) => c.id));
+  if (!C.length) return `<div class="empty"><h2>No hay nada para reclamar ahora</h2><p class="prose">Cuando una devolución pase de ${M.limit} días sin llegar, o marques una caja como incompleta o no recibida, aparece aquí.</p></div>`;
+  return `<div class="claim-grid">
+    <div class="claim-list">${Object.entries(GROUP).filter(([g]) => C.some((c) => c.group === g)).map(([g, l]) => {
+      const items = C.filter((c) => c.group === g);
+      return `<div class="claim-group"><header><span>${l}</span><span class="num">${items.length} · ${money(items.reduce((a, c) => a + (c.amount || 0), 0))}</span></header>
+      ${items.map((c) => `<div class="claim-row"><label><input type="checkbox" data-cl="${esc(c.id)}" ${ui.claimSel.has(c.id) ? 'checked' : ''}>
+        <span class="t">${esc(claimTitle(c))}<small>${esc(claimSub(c))}</small></span>
+        <span class="num">${money(c.amount)}</span></label></div>`).join('')}</div>`;
+    }).join('')}</div>
+    <div class="claim-out">
+      <div class="row" style="justify-content:space-between"><span class="label">Texto para el caso en Seller Center (en inglés)</span><span class="num" id="claim-total"></span></div>
+      <textarea class="out" id="claim-text" readonly aria-label="Texto del reclamo"></textarea>
+      <div class="row"><button class="btn primary" id="copy">Copiar texto</button>
+      ${Store.canWrite ? `<input id="case-no" placeholder="Nº de caso" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);width:140px"><button class="btn" id="mark-claimed">Marcar como reclamadas</button>` : ''}</div>
+      <p class="prose">Abre un caso en Seller Center (Help → Contact Support → WFS), pega el texto y adjunta los reportes. Cuando tengas el número de caso, escríbelo aquí y marca las devoluciones como reclamadas. Así sabes cuáles ya pediste y cuáles te pagaron.</p>
+    </div></div>`;
+}
+function claimTitle(c) { if (c.finding) return c.finding.title; const x = c.ret || c.rtv; return short(x.item, 60); }
+function claimSub(c) {
+  if (c.finding) return c.finding.lines ? 'Orden ' + c.finding.lines[0].order : '';
+  if (c.ret) return `RMA ${c.ret.rma} · ${c.ret.days} días · ${where(c.ret)}`;
+  return `Caja ${c.box.trk || c.box.cart} · enviada ${fmtDate(c.box.date)} · no está en tu reporte de devoluciones`;
+}
+function updateClaimText() {
+  const items = M.claims.filter((c) => ui.claimSel.has(c.id));
+  const ta = $('#claim-text'); if (!ta) return;
+  ta.value = items.length ? Core.claimText(items, M.limit) : 'Selecciona al menos un elemento a la izquierda.';
+  $('#claim-total').textContent = items.length + ' elementos · ' + money(items.reduce((a, c) => a + (c.amount || 0), 0));
+}
+
+function vCargar() {
+  const d = Store.data;
+  const info = [['returns', d.returns, M.coverage.returns], ['rtv', d.rtv, M.coverage.rtv], ['settle', d.settle, M.coverage.settle]];
+  return `
+  <div class="drop" id="drop">
+    <h2>Sube tus reportes de Walmart</h2>
+    <p class="prose">Arrastra aquí los archivos tal cual los descargas de Seller Center (Excel o CSV). Puedes subir varios a la vez: la herramienta reconoce cuál es cada uno. Si subes un periodo que ya estaba, no se duplica, solo se actualiza.</p>
+    <div class="row"><label class="btn primary" for="file">Elegir archivos</label><input id="file" type="file" accept=".xlsx,.xls,.csv" multiple hidden ${Store.canWrite ? '' : 'disabled'}></div>
+    <div class="log" id="log">${ui.log.map((l) => `<div class="${l.cls}">${esc(l.msg)}</div>`).join('')}</div>
+  </div>
+  <section class="section"><div class="reports">${info.map(([t, rows, cov]) => `<div class="report"><span class="label">${Core.LABEL[t]}</span><span class="n">${rows.length}</span><span class="muted" style="font-size:12px">${cov ? esc(cov.split(' – ').map(fmtDate).join(' – ')) : 'Sin cargar'}</span></div>`).join('')}</div></section>
+  <section class="section"><h2>Dónde descargar cada reporte</h2><div class="prose">
+    <p><b>Customer Returns:</b> WFS → Reports → Customer Returns. Es el que dice qué te devolvieron, de quién es la culpa y adónde fue cada producto.</p>
+    <p><b>Return to Seller:</b> WFS → Reports → Return to Seller. Es lo que Walmart dice que te mandó de vuelta, con tracking de FedEx.</p>
+    <p><b>Settlement:</b> WFS → Reports → Settlement. Son los cargos y reembolsos de WFS. Descarga todos los periodos que puedas, porque cada archivo trae unos 3 meses.</p>
+    <p><b>Próximo:</b> el Reconciliation report de Payments, para confirmar qué devoluciones te descontaron del depósito.</p></div></section>
+  <section class="section"><h2>Ajustes</h2>
+    <div class="row"><div class="field"><label class="label" for="dias">Días sin llegar para considerarla perdida</label>
+    <input id="dias" type="number" min="7" max="180" value="${Store.cfg.dias || 45}" style="width:120px" ${Store.canWrite ? '' : 'disabled'}></div></div>
+    <p class="prose">En tu settlement, Walmart pagó sola las devoluciones perdidas entre 60 y 100 días después del reembolso al cliente. Con 45 días alcanzas a reclamar antes y no esperas a que Walmart se acuerde.</p>
+    ${Store.canWrite ? `<div class="row" style="margin-top:8px">${ui.confirmClear ? `<span class="confirm-inline">Se borran todos los reportes y tus marcas. ¿Seguro? <button class="btn small on-bad" id="clear-yes">Sí, borrar</button><button class="btn small" id="clear-no">Cancelar</button></span>` : `<button class="btn small" id="clear">Borrar todos los datos</button>`}</div>` : ''}
+  </section>`;
+}
+
+async function handleFiles(files) {
+  ui.log = [];
+  for (const f of files) {
+    try {
+      let aoa;
+      if (/\.csv$/i.test(f.name)) aoa = Core.parseCSV(await f.text());
+      else {
+        if (!window.XLSX) throw new Error('No cargó el lector de Excel. Guarda el archivo como CSV y súbelo de nuevo.');
+        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+        let best = null;
+        for (const n of wb.SheetNames) {
+          const a = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' });
+          const r = Core.normalize(a);
+          if (r && (!best || r.rows.length > best.rows.length)) best = r;
+        }
+        if (!best) throw new Error('No reconozco este reporte.');
+        await ingest(f.name, best); continue;
+      }
+      const r = Core.normalize(aoa);
+      if (!r) throw new Error('No reconozco este reporte. Debe ser Customer Returns, Return to Seller o Settlement.');
+      await ingest(f.name, r);
+    } catch (e) { ui.log.push({ cls: 'err', msg: `${f.name}: ${e.message || e.code || e}` }); }
+    render();
+  }
+}
+async function ingest(name, r) {
+  ui.log.push({ cls: 'muted', msg: `${name}: leyendo ${Core.LABEL[r.type]}…` }); render();
+  const m = Core.merge(Store.data[r.type], r.rows);
+  let period = Store.data.settlePeriod;
+  if (r.type === 'settle' && r.period) period = period ? { from: [period.from, r.period.from].sort()[0], to: [period.to, r.period.to].sort()[1] } : r.period;
+  await Store.saveReport(r.type, m.rows, period);
+  if (Store.mode === 'db') { Store.data[r.type] = m.rows; if (r.type === 'settle') Store.data.settlePeriod = period; }
+  ui.log[ui.log.length - 1] = { cls: 'ok', msg: `${name}: ${Core.LABEL[r.type]}, ${r.rows.length} filas (${m.added} nuevas).` };
+}
+
+async function exportCSV() {
+  const cols = ['Estado', 'RMA', 'Orden', 'SKU', 'GTIN', 'Producto', 'Iniciada', 'Dias', 'Motivo', 'Culpa', 'Donde esta', 'Reembolso', 'Cargo devolucion', 'Pagado por Walmart', 'Caso'];
+  const lines = [cols.join(',')].concat(M.returns.map((r) => [Core.STATE[r.state].label, r.rma, r.order, r.sku, r.gtin, r.item, r.date, r.days, r.reason, r.fault, where(r), r.refund.toFixed(2), r.fee.toFixed(2), r.paid.toFixed(2), (r.mark && r.mark.caso) || '']
+    .map((x) => '"' + String(x ?? '').replace(/"/g, '""') + '"').join(',')));
+  const data = '﻿' + lines.join('\n'), filename = `devoluciones-wfs-${today()}.csv`;
+  let dl = null;
+  try { if (window.claude && window.claude.use) dl = await window.claude.use('downloads'); } catch (e) {}
+  if (dl) { try { await dl.save({ filename, data }); } catch (e) { if (e.code !== 'declined') showToast('No se pudo descargar el archivo.'); } return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type: 'text/csv' })); a.download = filename; a.click();
+}
+
+function openReturn(k) {
+  const r = M.returns.find((x) => x.k === k); if (!r) return;
+  const mk = r.mark || {};
+  const kv = [['RMA', r.rma], ['Orden del cliente', r.order], ['SKU', r.sku], ['GTIN', r.gtin], ['Iniciada', fmtDate(r.date) + (r.days != null ? ` (${r.days} días)` : '')], ['Canal', r.channel],
+    ['Motivo', REASON[r.reason] || r.reason], ['Culpa', r.fault === 'WFS' ? 'WFS (Walmart)' : 'Vendedor'], ['Tracking del cliente', r.trk || '—'], ['Estado del tracking', r.trkStatus || '—'],
+    ['Procesada en centro', fmtDate(r.processed)], ['Resultado', [r.disp, r.cond].filter(Boolean).join(' · ') || '—'], ['Enviada a ti', r.rtvDate ? fmtDate(r.rtvDate) + ' · ' + (r.rtvTrk || 'sin tracking') : '—'],
+    ['Caja', r.v ? (r.v.trk || r.v.cart) : '—'], ['Reembolso al cliente', money(r.refund)], ['Cargo por devolución', money(r.fee)], ['Walmart te pagó', r.paid ? money(r.paid) : '—']];
+  const dis = Store.canWrite ? '' : 'disabled';
+  $('#dlg').innerHTML = `<form class="dlg" method="dialog" id="ret-form">
+    <div class="dlg-head"><div><div class="label">Devolución</div><h2 style="margin-top:4px">${esc(r.item)}</h2><div style="margin-top:6px">${pill(r.state)}</div></div>
+    <button class="btn small" value="cancel" formnovalidate>Cerrar</button></div>
+    <p class="prose" style="margin:0">${esc(where(r))}</p>
+    <dl class="kv">${kv.map(([a, b]) => `<div><dt>${a}</dt><dd class="${/RMA|Orden|GTIN|Tracking|Caja/.test(a) ? 'num' : ''}">${esc(b)}</dd></div>`).join('')}</dl>
+    <div class="claim-box">
+      <div class="field"><label class="label" for="rc-st">Reclamo</label><select id="rc-st" ${dis}>
+        ${[['', 'Sin reclamo'], ['abierto', 'Abierto'], ['pagado', 'Pagado'], ['rechazado', 'Rechazado']].map(([v, l]) => `<option value="${v}" ${mk.reclamo === v || (!mk.reclamo && !v) ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label class="label" for="rc-case">Nº de caso</label><input id="rc-case" value="${esc(mk.caso || '')}" ${dis}></div>
+      <div class="field"><label class="label" for="rc-amt">Monto pagado</label><input id="rc-amt" type="number" step="0.01" value="${esc(mk.monto || '')}" ${dis}></div>
+      <div class="field full"><label class="label" for="rc-note">Notas</label><textarea id="rc-note" rows="2" ${dis}>${esc(mk.nota || '')}</textarea></div>
+      ${Store.canWrite ? `<div class="full row"><button class="btn primary" value="save" id="rc-save">Guardar</button></div>` : ''}
+    </div></form>`;
+  const dlg = $('#dlg');
+  $('#ret-form').addEventListener('submit', async (e) => {
+    if (e.submitter && e.submitter.value === 'save') {
+      const val = { reclamo: $('#rc-st').value, caso: $('#rc-case').value.trim(), monto: parseFloat($('#rc-amt').value) || 0, nota: $('#rc-note').value.trim(), at: today() };
+      const empty = !val.reclamo && !val.caso && !val.nota && !val.monto;
+      try { await Store.saveMark('ret-' + r.rma + '-' + r.line, empty ? null : val); showToast('Guardado'); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    }
+  });
+  dlg.showModal();
+}
+
+// Eventos
+document.addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-bs],#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
+  if (!t) return;
+  if (t.dataset.tab) return go(t.dataset.tab);
+  if (t.dataset.go) return go(t.dataset.go);
+  if (t.dataset.rf) { ui.retFilter = t.dataset.rf; ui.limit = 60; return render(); }
+  if (t.dataset.bf) { ui.boxFilter = t.dataset.bf; return render(); }
+  if (t.dataset.sf) { ui.setFilter = t.dataset.sf; ui.limit = 60; return render(); }
+  if (t.dataset.ret) return openReturn(t.dataset.ret);
+  if (t.dataset.bs !== undefined) {
+    const id = t.closest('[data-box]').dataset.box, cur = Store.marks['box-' + id] || {};
+    const val = t.dataset.bs ? { ...cur, estado: t.dataset.bs, faltan: t.dataset.bs === 'incompleta' ? (cur.faltan || []) : [], at: today() } : null;
+    try { await Store.saveMark('box-' + id, val); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    return;
+  }
+  if (t.id === 'more') { ui.limit += 60; return render(); }
+  if (t.id === 'export') return exportCSV();
+  if (t.id === 'copy') {
+    const ta = $('#claim-text');
+    try { await navigator.clipboard.writeText(ta.value); showToast('Texto copiado'); } catch (err) { ta.focus(); ta.select(); showToast('Selecciónalo y cópialo con Ctrl+C'); }
+    return;
+  }
+  if (t.id === 'mark-claimed') {
+    const caso = $('#case-no').value.trim();
+    const items = M.claims.filter((c) => ui.claimSel.has(c.id) && c.ret);
+    if (!items.length) return showToast('Selecciona devoluciones para marcar.');
+    t.disabled = true;
+    try { for (const c of items) await Store.saveMark('ret-' + c.ret.rma + '-' + c.ret.line, { ...(c.ret.mark || {}), reclamo: 'abierto', caso, at: today() }); showToast(`${items.length} marcadas como reclamo abierto`); }
+    catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    ui.claimSel = null; return render();
+  }
+  if (t.id === 'clear') { ui.confirmClear = true; return render(); }
+  if (t.id === 'clear-no') { ui.confirmClear = false; return render(); }
+  if (t.id === 'clear-yes') { ui.confirmClear = false; await Store.clearAll(); ui.claimSel = null; showToast('Datos borrados'); return render(); }
+});
+document.addEventListener('change', async (e) => {
+  const t = e.target;
+  if (t.dataset.miss) {
+    const id = t.closest('[data-box]').dataset.box, cur = Store.marks['box-' + id] || { estado: 'incompleta' };
+    const set = new Set(cur.faltan || []); t.checked ? set.add(t.dataset.miss) : set.delete(t.dataset.miss);
+    try { await Store.saveMark('box-' + id, { ...cur, faltan: [...set], at: today() }); } catch (err) { showToast('No se pudo guardar.'); }
+  }
+  if (t.dataset.cl) { t.checked ? ui.claimSel.add(t.dataset.cl) : ui.claimSel.delete(t.dataset.cl); updateClaimText(); }
+  if (t.id === 'file') handleFiles([...t.files]);
+  if (t.id === 'dias') { const d = Math.max(7, Math.min(180, parseInt(t.value) || 45)); await Store.saveCfg({ dias: d }); showToast(`Ahora se consideran perdidas después de ${d} días`); }
+});
+let qTimer;
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'q') return;
+  clearTimeout(qTimer); qTimer = setTimeout(() => { ui.q = e.target.value; ui.limit = 60; render(); const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 200);
+});
+['dragover', 'dragleave', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => {
+  const d = e.target.closest && e.target.closest('#drop'); if (!d) return;
+  e.preventDefault();
+  if (ev === 'dragover') d.classList.add('over'); else d.classList.remove('over');
+  if (ev === 'drop' && Store.canWrite) handleFiles([...e.dataTransfer.files]);
+}));
+
+const h = (location.hash || '').slice(1);
+if (TABS.some(([id]) => id === h)) ui.tab = h;
+Store.listeners.push(() => { if (ui.claimSel && M) { /* conservar selección */ } render(); });
+render();
+Store.init();
+</script>
