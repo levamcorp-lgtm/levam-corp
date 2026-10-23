@@ -1,18 +1,18 @@
-<title>Devoluciones WFS Levam</title>
+<title>Control de Devoluciones WFS</title>
 <meta charset="utf-8">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-/* Layout: herramienta de conciliación — franja de resumen en dólares arriba, pestañas por reporte, tablas densas debajo. Identidad Levam: azul, líneas finas, etiquetas en versalitas. */
+/* Layout: herramienta de conciliación — franja de resumen en dólares arriba, pestañas por reporte, tablas densas debajo. Identidad neutra: verde petróleo, líneas finas, etiquetas en versalitas. */
 :root {
   --bg: #ffffff;
   --bg-soft: #f5f7fa;
   --fg: #111418;
   --muted: #687280;
   --line: rgba(17, 32, 56, 0.11);
-  --accent: #2d7dd2;
-  --accent-dim: rgba(45, 125, 210, 0.09);
+  --accent: #0f766e;
+  --accent-dim: rgba(15, 118, 110, 0.09);
   --ok: #23774a;
   --ok-dim: rgba(35, 119, 74, 0.10);
   --warn: #a8670f;
@@ -26,7 +26,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0e1218; --bg-soft: #161c25; --fg: #e7ecf2; --muted: #8e99a7; --line: rgba(205, 220, 240, 0.12);
-    --accent: #5ea6ee; --accent-dim: rgba(94, 166, 238, 0.13);
+    --accent: #3fb8aa; --accent-dim: rgba(63, 184, 170, 0.13);
     --ok: #52b884; --ok-dim: rgba(82, 184, 132, 0.14); --warn: #e3a948; --warn-dim: rgba(227, 169, 72, 0.14);
     --bad: #f0715d; --bad-dim: rgba(240, 113, 93, 0.14); --grey-dim: rgba(142, 153, 167, 0.16);
     color-scheme: dark;
@@ -34,7 +34,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #0e1218; --bg-soft: #161c25; --fg: #e7ecf2; --muted: #8e99a7; --line: rgba(205, 220, 240, 0.12);
-  --accent: #5ea6ee; --accent-dim: rgba(94, 166, 238, 0.13);
+  --accent: #3fb8aa; --accent-dim: rgba(63, 184, 170, 0.13);
   --ok: #52b884; --ok-dim: rgba(82, 184, 132, 0.14); --warn: #e3a948; --warn-dim: rgba(227, 169, 72, 0.14);
   --bad: #f0715d; --bad-dim: rgba(240, 113, 93, 0.14); --grey-dim: rgba(142, 153, 167, 0.16);
   color-scheme: dark;
@@ -61,11 +61,6 @@ button { cursor: pointer; }
 
 header.top { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; padding-bottom: 16px; border-bottom: 0.5px solid var(--line); }
 .brand { display: flex; gap: 12px; align-items: center; }
-.mark { width: 28px; height: 28px; position: relative; flex: none; }
-.mark i { position: absolute; display: block; background: var(--muted); }
-.mark i:nth-child(1) { left: 6px; top: 0; width: 2px; height: 22px; }
-.mark i:nth-child(2) { left: 6px; bottom: 0; width: 16px; height: 2px; }
-.mark i:nth-child(3) { left: 10px; bottom: 6px; width: 10px; height: 2px; background: var(--accent); }
 .coverage { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 9px; border: 0.5px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--bg); white-space: nowrap; }
 .chip b { color: var(--fg); font-weight: 500; }
@@ -225,9 +220,8 @@ dialog::backdrop { background: rgba(10, 14, 20, 0.45); }
 <div class="wrap">
   <header class="top">
     <div class="brand">
-      <div class="mark" aria-hidden="true"><i></i><i></i><i></i></div>
       <div>
-        <div class="eyebrow">Levam Corp · Walmart WFS</div>
+        <div class="eyebrow" id="seller">Walmart Marketplace · WFS</div>
         <h1>Control de devoluciones y cobros</h1>
       </div>
     </div>
@@ -587,7 +581,7 @@ const Core = (() => {
   function short(s) { s = s || 'producto'; return s.length > 38 ? s.slice(0, 36).trim() + '…' : s; }
   function minmax(ds) { const s = [...ds].sort(); return s.length ? (s[0] === s[s.length - 1] ? s[0] : s[0] + ' – ' + s[s.length - 1]) : ''; }
 
-  function claimText(items, limit) {
+  function claimText(items, limit, seller) {
     const g = (k) => items.filter((c) => c.group === k);
     const $ = (n) => '$' + (n || 0).toFixed(2);
     const G = (n) => n.padStart(14, '0');
@@ -621,7 +615,7 @@ const Core = (() => {
       for (const c of fees) out.push('   - ' + c.finding.claim);
       out.push('');
     }
-    out.push(`Total requested: ${$(items.reduce((a, c) => a + (c.amount || 0), 0))}`, '', 'Please confirm the status of each item and process the corresponding reimbursements.', '', 'Thank you,', 'Levam Corp');
+    out.push(`Total requested: ${$(items.reduce((a, c) => a + (c.amount || 0), 0))}`, '', 'Please confirm the status of each item and process the corresponding reimbursements.', '', 'Thank you,', seller || '[Seller name]');
     return out.join('\n');
   }
 
@@ -735,6 +729,7 @@ function render() {
   const cov = M.coverage;
   $('#coverage').innerHTML = [['Devoluciones', cov.returns], ['Enviado a ti', cov.rtv], ['Settlement', cov.settle]]
     .map(([l, r]) => `<span class="chip">${l} <b class="num">${r ? esc(r.split(' – ').map(fmtDate).join(' – ')) : 'sin cargar'}</b></span>`).join('');
+  $('#seller').textContent = (Store.cfg.empresa ? Store.cfg.empresa + ' · ' : '') + 'Walmart Marketplace · WFS';
   $('#mode').textContent = Store.mode === 'db' ? (Store.canWrite ? 'Guardado en la nube' : 'Solo lectura') : 'Guardado en este navegador';
   const nClaims = M.claims.length;
   const nBoxes = M.boxes.filter((b) => !b.mark || !b.mark.estado).length;
@@ -935,7 +930,7 @@ function claimSub(c) {
 function updateClaimText() {
   const items = M.claims.filter((c) => ui.claimSel.has(c.id));
   const ta = $('#claim-text'); if (!ta) return;
-  ta.value = items.length ? Core.claimText(items, M.limit) : 'Selecciona al menos un elemento a la izquierda.';
+  ta.value = items.length ? Core.claimText(items, M.limit, Store.cfg.empresa) : 'Selecciona al menos un elemento a la izquierda.';
   $('#claim-total').textContent = items.length + ' elementos · ' + money(items.reduce((a, c) => a + (c.amount || 0), 0));
 }
 
@@ -957,7 +952,9 @@ function vCargar() {
     <p><b>Próximo:</b> el Reconciliation report de Payments, para confirmar qué devoluciones te descontaron del depósito.</p></div></section>
   <section class="section"><h2>Ajustes</h2>
     <div class="row"><div class="field"><label class="label" for="dias">Días sin llegar para considerarla perdida</label>
-    <input id="dias" type="number" min="7" max="180" value="${Store.cfg.dias || 45}" style="width:120px" ${Store.canWrite ? '' : 'disabled'}></div></div>
+    <input id="dias" type="number" min="7" max="180" value="${Store.cfg.dias || 45}" style="width:120px" ${Store.canWrite ? '' : 'disabled'}></div>
+    <div class="field"><label class="label" for="empresa">Nombre de tu empresa (firma de los reclamos)</label>
+    <input id="empresa" value="${esc(Store.cfg.empresa || '')}" placeholder="Ej. Mi Tienda LLC" style="width:260px" ${Store.canWrite ? '' : 'disabled'}></div></div>
     <p class="prose">En tu settlement, Walmart pagó sola las devoluciones perdidas entre 60 y 100 días después del reembolso al cliente. Con 45 días alcanzas a reclamar antes y no esperas a que Walmart se acuerde.</p>
     ${Store.canWrite ? `<div class="row" style="margin-top:8px">${ui.confirmClear ? `<span class="confirm-inline">Se borran todos los reportes y tus marcas. ¿Seguro? <button class="btn small on-bad" id="clear-yes">Sí, borrar</button><button class="btn small" id="clear-no">Cancelar</button></span>` : `<button class="btn small" id="clear">Borrar todos los datos</button>`}</div>` : ''}
   </section>`;
@@ -1086,6 +1083,7 @@ document.addEventListener('change', async (e) => {
   }
   if (t.dataset.cl) { t.checked ? ui.claimSel.add(t.dataset.cl) : ui.claimSel.delete(t.dataset.cl); updateClaimText(); }
   if (t.id === 'file') handleFiles([...t.files]);
+  if (t.id === 'empresa') { await Store.saveCfg({ empresa: t.value.trim() }); showToast('Nombre guardado'); }
   if (t.id === 'dias') { const d = Math.max(7, Math.min(180, parseInt(t.value) || 45)); await Store.saveCfg({ dias: d }); showToast(`Ahora se consideran perdidas después de ${d} días`); }
 });
 let qTimer;
