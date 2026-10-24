@@ -158,6 +158,17 @@ td .sku { font-size: 11px; color: var(--muted); font-family: var(--font-num); }
 .box li.got .t { color: var(--ok); }
 .box li.lost .t { color: var(--bad); text-decoration: line-through; }
 
+/* Inventario */
+.inv-table td { vertical-align: middle; }
+.inv-table input { width: 78px; padding: 5px 7px; border: 0.5px solid var(--line); border-radius: 3px; background: var(--bg-soft); font-family: var(--font-num); font-size: 12px; text-align: right; }
+.inv-table input::placeholder { color: var(--muted); opacity: 0.8; }
+.inv-table input.pct { width: 56px; }
+.inv-table .prodcell { display: flex; gap: 10px; align-items: center; min-width: 220px; max-width: 300px; }
+.inv-table .prodcell .thumb { width: 36px; height: 36px; font-size: 10px; }
+.inv-table tfoot td { font-weight: 600; background: var(--bg-soft); border-top: 0.5px solid var(--line); }
+.inv-table th.grp { text-align: center; border-left: 0.5px solid var(--line); }
+.inv-table .bl { border-left: 0.5px solid var(--line); }
+
 /* Productos */
 .thumb { width: 56px; height: 56px; border-radius: 4px; background: var(--bg-soft); border: 0.5px solid var(--line); object-fit: contain; flex: none; display: grid; place-items: center; font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.04em; overflow: hidden; }
 .thumb.lg { width: 120px; height: 120px; font-size: 14px; }
@@ -607,7 +618,17 @@ const Core = (() => {
       p.n[b]++; p.amt[b] += v.value;
     }
     for (const v of V) { const p = P.get(v.gtin); if (p && !/^WFS-|^FBM-/.test(p.name) && v.item && v.item.length < p.name.length) p.name = v.item; }
-    const products = [...P.values()].map((p) => ({ ...p, pending: p.amt.recuperar + p.amt.confirmar + p.amt.camino, incoming: V.filter((v) => v.gtin === p.gtin && !v.mark) }))
+    const ffee = new Map();
+    for (const s of [...S].sort((a, b) => (a.date || '').localeCompare(b.date || ''))) if (s.type === 'FulfillmentFee' && s.gtin && s.qty > 0) {
+      ffee.set(s.gtin, s.net / s.qty);
+      if (!P.has(s.gtin) && s.item) prod(s.gtin, s.item, '');
+    }
+    const products = [...P.values()].map((p) => {
+      const refunds = p.rets.filter((r) => r.refund > 0);
+      return { ...p, pending: p.amt.recuperar + p.amt.confirmar + p.amt.camino, incoming: V.filter((v) => v.gtin === p.gtin && !v.mark),
+        home: V.filter((v) => v.gtin === p.gtin && v.mark && v.mark.estado === 'llego').length,
+        sugFee: ffee.get(p.gtin) || 0, sugPrice: refunds.length ? refunds.reduce((a, r) => a + r.refund / (r.qty || 1), 0) / refunds.length : 0 };
+    })
       .sort((a, b) => b.pending - a.pending || b.refund - a.refund);
 
     const range = (arr, f) => minmax(arr.map(f).filter(Boolean));
@@ -772,7 +793,7 @@ const TYPE_ES = {
   Refund: 'Reembolso de Walmart a ti', InboundTransportationFee: 'Transporte de entrada a WFS', LostInventory: 'Inventario perdido (te pagan)',
   FoundInventory: 'Inventario encontrado (te descuentan)', StorageFee: 'Almacenamiento',
 };
-const TABS = [['resumen', 'Resumen'], ['productos', 'Por producto'], ['cajas', 'Por llegarte'], ['devoluciones', 'Devoluciones'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
+const TABS = [['resumen', 'Resumen'], ['productos', 'Por producto'], ['inventario', 'Inventario'], ['cajas', 'Por llegarte'], ['devoluciones', 'Devoluciones'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
 const ui = { tab: 'resumen', retFilter: 'todas', q: '', limit: 60, boxFilter: 'pend', setFilter: 'todos', sel: null, confirmClear: false, log: [] };
 let M = null;
 
@@ -797,9 +818,11 @@ function render() {
   }).join('');
   const hasData = M.returns.length || M.rtv.length || M.settle.length;
   const v = $('#view');
+  const fid = document.activeElement && document.activeElement.id;
   if (!hasData && ui.tab !== 'cargar') { v.innerHTML = emptyState(); return; }
-  v.innerHTML = ({ resumen: vResumen, productos: vProductos, devoluciones: vDevoluciones, cajas: vCajas, cobros: vCobros, reclamos: vReclamos, cargar: vCargar })[ui.tab]();
+  v.innerHTML = ({ resumen: vResumen, productos: vProductos, inventario: vInventario, devoluciones: vDevoluciones, cajas: vCajas, cobros: vCobros, reclamos: vReclamos, cargar: vCargar })[ui.tab]();
   if (ui.tab === 'reclamos') updateClaimText();
+  if (fid && fid.startsWith('inv-')) { const el = document.getElementById(fid); if (el) el.focus(); }
 }
 
 function emptyState() {
@@ -951,6 +974,80 @@ function openProduct(gtin) {
     <div class="table-wrap"><table><thead><tr><th>Estado</th><th>Fecha</th><th>Dónde está</th><th class="r">Monto</th></tr></thead><tbody>${units.map((u) => u.html).join('')}</tbody></table></div>
   </div>`;
   const d = $('#dlg'); d.dataset.prod = gtin; if (!d.open) d.showModal();
+}
+
+// Inventario: cada producto con costo, precio, fees y unidades por lugar
+function invRows() {
+  const P = Store.products;
+  const rows = M.products.map((p) => ({ id: p.gtin, name: (P[p.gtin] || {}).name || p.name, sku: (P[p.gtin] || {}).sku || p.sku, p }));
+  for (const [id, x] of Object.entries(P)) if (id.startsWith('m-')) rows.push({ id, name: x.name || 'Producto nuevo', sku: x.sku || '', p: null, manual: true });
+  return rows.map((r) => {
+    const x = P[r.id] || {};
+    const n = (k) => (x[k] === '' || x[k] == null ? null : +x[k]);
+    const price = n('price') ?? (r.p ? Math.round(r.p.sugPrice * 100) / 100 : 0);
+    const fee = n('wfsFee') ?? (r.p ? Math.round(r.p.sugFee * 100) / 100 : 0);
+    const pct = n('referral') ?? 15;
+    const cost = n('cost') ?? 0;
+    const net = price - fee - price * pct / 100;
+    const wfs = n('qtyWfs') ?? 0;
+    const home = (r.p ? r.p.home : 0) + (n('qtyHome') ?? 0);
+    const coming = r.p ? r.p.incoming.length : 0;
+    const units = wfs + home + coming;
+    const claim = r.p ? r.p.amt.recuperar : 0;
+    return { ...r, x, price, fee, pct, cost, net, wfs, home, coming, units, claim, valCost: units * cost, valNet: units * net, profit: units * (net - cost),
+      guessPrice: n('price') == null, guessFee: n('wfsFee') == null, guessPct: n('referral') == null };
+  });
+}
+function vInventario() {
+  const rows = invRows();
+  const T = (f) => rows.reduce((a, r) => a + f(r), 0);
+  const tot = { cost: T((r) => r.valCost), net: T((r) => r.valNet), profit: T((r) => r.profit), claim: T((r) => r.claim),
+    wfsC: T((r) => r.wfs * r.cost), homeC: T((r) => r.home * r.cost), comingC: T((r) => r.coming * r.cost), units: T((r) => r.units) };
+  const noCost = rows.filter((r) => r.units > 0 && !r.cost).length;
+  const dis = Store.canWrite ? '' : 'disabled';
+  const inp = (r, k, val, ph, cls = '') => `<input id="inv-${esc(r.id)}-${k}" data-inv="${esc(r.id)}" data-k="${k}" type="number" step="0.01" min="0" class="${cls}" value="${r.x[k] ?? ''}" placeholder="${ph}" ${dis} aria-label="${k}">`;
+  const parts = [['En WFS', tot.wfsC, 'var(--accent)'], ['En tu casa', tot.homeC, 'var(--ok)'], ['Por llegarte', tot.comingC, 'var(--warn)']];
+  const pTot = parts.reduce((a, x) => a + x[1], 0) || 1;
+  return `
+  <div class="buckets" style="margin-bottom:16px">
+    <div class="bucket"><span class="head">Inventario al costo</span><span class="amt">${money(tot.cost)}</span><span class="sub">${tot.units} unidades · lo que te costó</span></div>
+    <div class="bucket"><span class="head">Valor neto de venta</span><span class="amt">${money(tot.net)}</span><span class="sub">Precio − WFS fee − referral fee</span></div>
+    <div class="bucket"><span class="head">Ganancia esperada</span><span class="amt" style="color:${tot.profit >= 0 ? 'var(--ok)' : 'var(--bad)'}">${money(tot.profit)}</span><span class="sub">Si vendes todo al precio de la tabla</span></div>
+    <div class="bucket"><span class="head">Por reclamar a Walmart</span><span class="amt" style="color:var(--bad)">${money(tot.claim)}</span><span class="sub">Devoluciones que nunca llegaron</span></div>
+    <div class="bucket"><span class="head">Inventario neto + reclamos</span><span class="amt">${money(tot.net + tot.claim)}</span><span class="sub">Lo que vale todo lo tuyo hoy</span></div>
+    <div class="bucket"><span class="head">Por llegarte</span><span class="amt">${money(tot.comingC)}</span><span class="sub">al costo · si no llega, se reclama</span></div>
+  </div>
+  <div class="bar-block" style="margin-top:0">
+    <div class="bar" role="img" aria-label="Inventario al costo por lugar">${parts.filter((x) => x[1] > 0).map(([l, v, c]) => `<span title="${l}: ${money(v)}" style="width:${(v / pTot * 100).toFixed(2)}%;background:${c}"></span>`).join('')}</div>
+    <div class="bar-legend">${parts.map(([l, v, c]) => `<span><i class="dot" style="background:${c}"></i>${l} ${money(v, 0)}</span>`).join('')}</div>
+  </div>
+  ${noCost ? `<div class="findings" style="margin:12px 0"><div class="finding"><span class="stripe" style="background:var(--warn)"></span><div><h3>Falta el costo de ${noCost} productos</h3><p>Escribe en la columna Costo lo que te cuesta cada unidad. Sin el costo, el inventario y la ganancia salen incompletos.</p></div></div></div>` : ''}
+  <p class="prose" style="margin:12px 0">Los números en gris son sugeridos: el precio sale del promedio que Walmart le reembolsó al cliente, el WFS fee sale de tu settlement y el referral fee empieza en 15%. Escribe encima para usar tus valores. <b>En tu casa</b> cuenta solo las devoluciones que marcaste como recibidas. Si tienes más unidades guardadas, súmalas en "+ extra".</p>
+  <div class="table-wrap"><table class="inv-table">
+    <thead><tr><th rowspan="2">Producto</th><th class="grp" colspan="6">Por unidad</th><th class="grp" colspan="5">Unidades</th><th class="grp" colspan="3">Valor</th></tr>
+    <tr><th class="r bl">Costo</th><th class="r">Precio venta</th><th class="r">WFS fee</th><th class="r">Referral %</th><th class="r">Neto</th><th class="r">Ganancia</th>
+    <th class="r bl">En WFS</th><th class="r">En casa</th><th class="r">+ extra</th><th class="r">Por llegar</th><th class="r">Total</th>
+    <th class="r bl">Al costo</th><th class="r">Neto</th><th class="r">Ganancia</th></tr></thead>
+    <tbody>${rows.map((r) => `<tr>
+      <td><div class="prodcell">${r.manual ? '<div class="thumb">+</div>' : photo(r.id)}<div style="min-width:0"><div class="item" title="${esc(r.name)}" style="max-width:24ch">${esc(r.name)}</div><div class="sku">${esc(r.sku || (r.manual ? 'manual' : 'GTIN ' + r.id))}</div></div></div></td>
+      <td class="r bl">${inp(r, 'cost', r.cost, '0.00')}</td>
+      <td class="r">${inp(r, 'price', r.price, r.p && r.p.sugPrice ? r.p.sugPrice.toFixed(2) : '0.00')}</td>
+      <td class="r">${inp(r, 'wfsFee', r.fee, r.p && r.p.sugFee ? r.p.sugFee.toFixed(2) : '0.00')}</td>
+      <td class="r">${inp(r, 'referral', r.pct, '15', 'pct')}</td>
+      <td class="r num">${money(r.net)}</td>
+      <td class="r num" style="color:${!r.cost ? 'var(--muted)' : r.net - r.cost >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.cost ? money(r.net - r.cost) + `<div class="sku">${r.price ? Math.round((r.net - r.cost) / r.price * 100) : 0}%</div>` : '—'}</td>
+      <td class="r bl">${inp(r, 'qtyWfs', r.wfs, '0')}</td>
+      <td class="r num">${r.p ? r.p.home : 0}</td>
+      <td class="r">${inp(r, 'qtyHome', 0, '0', 'pct')}</td>
+      <td class="r num">${r.coming}</td>
+      <td class="r num"><b>${r.units}</b></td>
+      <td class="r num bl">${money(r.valCost, 0)}</td><td class="r num">${money(r.valNet, 0)}</td>
+      <td class="r num" style="color:${r.profit >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.cost ? money(r.profit, 0) : '—'}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td>Total</td><td colspan="6" class="bl"></td><td class="r num bl">${T((r) => r.wfs)}</td><td class="r num">${T((r) => r.p ? r.p.home : 0)}</td><td class="r num">${T((r) => r.home - (r.p ? r.p.home : 0))}</td><td class="r num">${T((r) => r.coming)}</td><td class="r num">${tot.units}</td>
+      <td class="r num bl">${money(tot.cost, 0)}</td><td class="r num">${money(tot.net, 0)}</td><td class="r num">${money(tot.profit, 0)}</td></tr></tfoot>
+  </table></div>
+  ${Store.canWrite ? `<div class="row" style="margin-top:12px"><input id="new-name" placeholder="Nombre del producto" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);min-width:0;flex:1 1 220px;max-width:340px"><input id="new-sku" placeholder="SKU" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);width:180px"><button class="btn" id="add-prod">Agregar producto</button></div>
+  <p class="prose" style="margin-top:6px">Para productos que tienes en inventario pero que no han salido en ningún reporte de devoluciones.</p>` : ''}`;
 }
 
 async function uploadPhoto(gtin, file) {
@@ -1170,7 +1267,7 @@ function openReturn(k) {
 
 // Eventos
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
+  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],#add-prod,#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
   if (!t) return;
   if (t.dataset.close !== undefined) return $('#dlg').close();
   if (t.dataset.tab) return go(t.dataset.tab);
@@ -1191,6 +1288,11 @@ document.addEventListener('click', async (e) => {
     const entries = b.items.filter((v) => !st || !v.mark).map((v) => [v.uid, st ? { estado: st, at: today() } : null]);
     try { await Store.saveMarks(entries); showToast(st ? `${entries.length} productos marcados` : 'Caja sin marcar'); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
     return;
+  }
+  if (t.id === 'add-prod') {
+    const name = $('#new-name').value.trim(); if (!name) return showToast('Escribe el nombre del producto.');
+    await Store.saveProduct('m-' + Date.now(), { name, sku: $('#new-sku').value.trim() });
+    return showToast('Producto agregado al final de la tabla');
   }
   if (t.id === 'more') { ui.limit += 60; return render(); }
   if (t.id === 'export') return exportCSV();
@@ -1214,6 +1316,11 @@ document.addEventListener('click', async (e) => {
 });
 document.addEventListener('change', async (e) => {
   const t = e.target;
+  if (t.dataset.inv) {
+    const v = t.value.trim();
+    try { await Store.saveProduct(t.dataset.inv, { [t.dataset.k]: v === '' ? null : Math.max(0, parseFloat(v) || 0) }); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    return;
+  }
   if (t.id === 'photo-in' && t.files[0]) await uploadPhoto(t.dataset.gtin, t.files[0]);
   if (t.dataset.cl) { t.checked ? ui.claimSel.add(t.dataset.cl) : ui.claimSel.delete(t.dataset.cl); updateClaimText(); }
   if (t.id === 'file') handleFiles([...t.files]);
@@ -1234,7 +1341,8 @@ document.addEventListener('input', (e) => {
 
 const h = (location.hash || '').slice(1);
 if (TABS.some(([id]) => id === h)) ui.tab = h;
-Store.listeners.push(() => { render(); const d = $('#dlg'); if (d.open && d.dataset.prod) openProduct(d.dataset.prod); });
+let rTimer;
+Store.listeners.push(() => { clearTimeout(rTimer); rTimer = setTimeout(() => { render(); const d = $('#dlg'); if (d.open && d.dataset.prod) openProduct(d.dataset.prod); }, 0); });
 $('#dlg').addEventListener('close', () => { delete $('#dlg').dataset.prod; });
 render();
 Store.init();
