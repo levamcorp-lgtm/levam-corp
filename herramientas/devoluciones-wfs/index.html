@@ -899,7 +899,7 @@ const TYPE_ES = {
   Refund: 'Reembolso de Walmart a ti', InboundTransportationFee: 'Transporte de entrada a WFS', LostInventory: 'Inventario perdido (te pagan)',
   FoundInventory: 'Inventario encontrado (te descuentan)', StorageFee: 'Almacenamiento',
 };
-const TABS = [['resumen', 'Resumen'], ['productos', 'Por producto'], ['inventario', 'Inventario y capital'], ['cajas', 'Por llegarte'], ['devoluciones', 'Devoluciones'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
+const TABS = [['resumen', 'Resumen'], ['productos', 'Por producto'], ['inventario', 'Inventario'], ['capital', 'Capital y deudas'], ['cajas', 'Por llegarte'], ['devoluciones', 'Devoluciones'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
 const ui = { tab: 'resumen', retFilter: 'todas', q: '', limit: 60, boxFilter: 'pend', setFilter: 'todos', sel: null, confirmClear: false, log: [] };
 let M = null;
 
@@ -915,7 +915,7 @@ function render() {
   $('#coverage').innerHTML = [['Devoluciones', cov.returns], ['Enviado a ti', cov.rtv], ['Settlement', cov.settle]]
     .map(([l, r]) => `<span class="chip">${l} <b class="num">${r ? esc(r.split(' – ').map(fmtDate).join(' – ')) : 'sin cargar'}</b></span>`).join('');
   const PT = { resumen: ['Resumen', 'Cuánto dinero tienes en devoluciones y qué hay que reclamar'], productos: ['Por producto', 'Dinero pendiente en devoluciones por cada SKU'],
-    inventario: ['Inventario y capital', 'Dónde está tu mercancía, cuánto vale y cuánto capital tiene la empresa'], cajas: ['Por llegarte', 'Lo que Walmart dice que te mandó: confirma lo que llega'],
+    inventario: ['Inventario', 'Dónde está tu mercancía, cuánto te costó y cuánto vale'], capital: ['Capital y deudas', 'Bancos, préstamos, tarjetas y cómo crece la empresa mes a mes'], cajas: ['Por llegarte', 'Lo que Walmart dice que te mandó: confirma lo que llega'],
     devoluciones: ['Devoluciones', 'Cada devolución, su estado y dónde está'], cobros: ['Cobros WFS', 'Cargos y reembolsos del settlement de WFS'], reclamos: ['Reclamos', 'Arma el caso para Walmart en un clic'], cargar: ['Cargar reportes', 'Sube los reportes de Seller Center y ajusta la herramienta'] }[ui.tab];
   $('#ptitle').textContent = PT[0]; $('#psub').textContent = PT[1];
   $('#seller').textContent = (Store.cfg.empresa ? Store.cfg.empresa + ' · ' : '') + 'Walmart Marketplace · WFS';
@@ -930,9 +930,9 @@ function render() {
   const v = $('#view');
   const fid = document.activeElement && document.activeElement.id;
   if (!hasData && ui.tab !== 'cargar') { v.innerHTML = emptyState(); return; }
-  v.innerHTML = ({ resumen: vResumen, productos: vProductos, inventario: vInventario, devoluciones: vDevoluciones, cajas: vCajas, cobros: vCobros, reclamos: vReclamos, cargar: vCargar })[ui.tab]();
+  v.innerHTML = ({ resumen: vResumen, productos: vProductos, inventario: vInventario, capital: () => vCapital(invRows()), devoluciones: vDevoluciones, cajas: vCajas, cobros: vCobros, reclamos: vReclamos, cargar: vCargar })[ui.tab]();
   if (ui.tab === 'reclamos') updateClaimText();
-  if (ui.tab === 'inventario') bindChart();
+  if (ui.tab === 'capital') bindChart();
   if (fid && (fid.startsWith('inv-') || fid.startsWith('fin-'))) { const el = document.getElementById(fid); if (el) el.focus(); }
 }
 
@@ -1113,11 +1113,17 @@ const LOCS = [['wfs', 'En Walmart (WFS)', 'var(--accent)', 'Disponible para vend
   ['wh', 'En tu warehouse', 'var(--fg)', 'Esperando para enviar'], ['home', 'Devoluciones en casa', 'var(--ok)', 'Recibidas de Walmart'], ['coming', 'Devoluciones por llegar', 'var(--warn)', 'Si no llegan, se reclaman']];
 function capitalNow(rows) {
   const F = Store.fin, sum = (a, k) => (a || []).reduce((x, r) => x + (+r[k] || 0), 0);
-  const inv = rows.reduce((a, r) => a + r.valCost, 0), invNet = rows.reduce((a, r) => a + r.valNet, 0), claim = rows.reduce((a, r) => a + r.claim, 0);
+  // Las devoluciones que aún no te llegan se cuentan por lo que Walmart reembolsó: o llega el producto o Walmart te lo paga.
+  // Por eso aquí el inventario no incluye las "devoluciones por llegar" (se contarían dos veces).
+  const own = (r) => r.wfs + r.inbound + r.wh + r.home;
+  const inv = rows.reduce((a, r) => a + own(r) * r.cost, 0), invNet = rows.reduce((a, r) => a + own(r) * r.net, 0);
+  const B = M.buckets;
+  const ret = { camino: B.camino.amt, llegar: M.products.reduce((a, p) => a + p.amt.confirmar, 0), reclamar: M.products.reduce((a, p) => a + p.amt.recuperar, 0) };
+  const claim = ret.camino + ret.llegar + ret.reclamar;
   const cash = sum(F.cash, 'amount'), other = sum(F.assets, 'amount'), pend = +F.walmartPending || 0;
   const loans = sum(F.loans, 'balance'), credit = sum(F.credits, 'used');
   const assets = cash + inv + claim + pend + other, debt = loans + credit;
-  return { inv, invNet, claim, cash, other, pend, loans, credit, assets, debt, capital: assets - debt, capitalNet: assets - inv + invNet - debt };
+  return { inv, invNet, claim, ret, cash, other, pend, loans, credit, assets, debt, capital: assets - debt, capitalNet: assets - inv + invNet - debt };
 }
 function vInventario() {
   const rows = invRows();
@@ -1168,7 +1174,7 @@ function vInventario() {
   </table></div>
   ${Store.canWrite ? `<div class="row"><input id="new-name" placeholder="Nombre del producto" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);min-width:0;flex:1 1 220px;max-width:340px"><input id="new-sku" placeholder="SKU" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);width:180px"><button class="btn" id="add-prod">Agregar producto</button></div>` : ''}
   </section>
-  ${vCapital(rows)}`;
+  <div class="findings" style="margin-top:20px"><div class="finding"><span class="stripe" style="background:var(--accent)"></span><div><h3>Bancos, deudas y gráfica de crecimiento</h3><p>El dinero en el banco, los préstamos, las tarjetas y la gráfica de inventario y capital (hoy y proyectado) están en la pestaña Capital y deudas.</p><div class="act"><button class="btn small primary" data-go="capital">Ir a Capital y deudas</button></div></div></div></div>`;
 }
 
 function vCapital(rows) {
@@ -1181,20 +1187,23 @@ function vCapital(rows) {
   const monthly = sum(F.loans, 'payment');
   const autoRow = (l, v, note) => `<div class="lrow"><span class="auto">${l}<div class="sku" style="font-family:var(--font-body)">${note}</div></span><span class="num">${money(v)}</span></div>`;
   return `
-  <section class="section" style="margin-top:40px">
-    <div class="section-head"><h2>Capital de la empresa</h2><span class="muted" style="font-size:12px">Lo que tienes menos lo que debes</span></div>
+  <section class="section" style="margin-top:0">
     <div class="cap-hero">
       <div><div class="label" style="color:var(--accent)">Capital real</div><div class="big" style="color:${C.capital >= 0 ? 'var(--fg)' : 'var(--bad)'}">${money(C.capital)}</div></div>
-      <div class="eq">${money(C.assets)} en activos − ${money(C.debt)} en deudas. El inventario se cuenta al costo. Si lo cuentas a valor neto de venta, el capital sería <b class="num">${money(C.capitalNet)}</b>.</div>
-      ${Store.canWrite ? `<button class="btn primary small" id="snap">Guardar el capital de hoy</button>` : ''}
+      <div class="eq"><b>Lo que tienes menos lo que debes.</b> ${money(C.assets)} en activos − ${money(C.debt)} en deudas. El inventario se cuenta al costo. Si lo cuentas a valor neto de venta, el capital sería <b class="num">${money(C.capitalNet)}</b>.</div>
     </div>
     <div class="ledger">
       <div class="ledger-col"><header><span>Lo que tienes</span><span class="num">${money(C.assets)}</span></header>
         <div class="lgroup"><div class="gh"><span>Dinero en bancos</span><b>${money(C.cash)}</b></div>
           ${(F.cash || []).map((r) => `<div class="lrow">${fi('cash', r, 'name', 'Cuenta (ej. Chase)', 'text', 'nm')}${fi('cash', r, 'amount', '0.00')}${del('cash', r)}</div>`).join('')}${add('cash', 'Agregar cuenta')}</div>
-        <div class="lgroup"><div class="gh"><span>Inventario y Walmart</span><b>${money(C.inv + C.claim + C.pend)}</b></div>
-          ${autoRow('Inventario al costo', C.inv, 'Sale de la tabla de arriba')}
-          ${autoRow('Por reclamar a Walmart', C.claim, 'Devoluciones que nunca llegaron')}
+        <div class="lgroup"><div class="gh"><span>Inventario</span><b>${money(C.inv)}</b></div>
+          ${autoRow('Inventario al costo', C.inv, 'En WFS, camino a WFS, tu warehouse y devoluciones que ya tienes en casa')}</div>
+        <div class="lgroup"><div class="gh"><span>Devoluciones por recuperar</span><b>${money(C.claim)}</b></div>
+          <div class="sku" style="font-family:var(--font-body)">Lo que Walmart le reembolsó al cliente. O te llega el producto o Walmart te lo tiene que pagar.</div>
+          ${autoRow('En camino a Walmart', C.ret.camino, 'El cliente todavía no la entrega')}
+          ${autoRow('Por llegarte', C.ret.llegar, 'Walmart dice que te la mandó')}
+          ${autoRow('Por reclamar', C.ret.reclamar, 'Nunca llegaron o no te llegaron')}</div>
+        <div class="lgroup"><div class="gh"><span>Walmart</span><b>${money(C.pend)}</b></div>
           <div class="lrow"><span class="auto">Pago pendiente de Walmart<div class="sku" style="font-family:var(--font-body)">Lo que Walmart te va a depositar en el próximo pago</div></span><input id="fin-walmartPending" data-finfield="walmartPending" type="number" step="0.01" min="0" value="${esc(F.walmartPending || '')}" placeholder="0.00" ${dis}></div></div>
         <div class="lgroup"><div class="gh"><span>Otros activos</span><b>${money(C.other)}</b></div>
           ${(F.assets || []).map((r) => `<div class="lrow">${fi('assets', r, 'name', 'Ej. equipo, vehículo, depósito', 'text', 'nm')}${fi('assets', r, 'amount', '0.00')}${del('assets', r)}</div>`).join('')}${add('assets', 'Agregar activo')}</div>
@@ -1219,53 +1228,91 @@ function vCapital(rows) {
           }).join('')}${add('credits', 'Agregar tarjeta o línea')}</div>
       </div>
     </div>
-    ${vCapChart()}
-  </section>`;
+  </section>
+  ${vGrowth(C)}`;
 }
 
-function vCapChart() {
-  const H = [...Store.hist].filter((h) => h.date).sort((a, b) => a.date.localeCompare(b.date));
-  const dis = Store.canWrite;
-  const form = dis ? `<div class="row"><span class="label">Agregar un registro pasado</span><input id="hist-date" type="date" style="padding:6px 8px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft)"><input id="hist-amt" type="number" step="0.01" placeholder="Capital ese día" style="padding:6px 8px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);width:150px"><button class="btn small" id="hist-add">Agregar</button></div>` : '';
-  let chart;
-  if (H.length < 2) chart = `<div class="empty">${H.length ? `Hay un registro: ${fmtDate(H[0].date)}, ${money(H[0].capital)}.` : 'Todavía no hay registros.'} La gráfica se dibuja desde el segundo registro. Cada vez que cambies algo de inventario o capital se guarda el capital del día, o puedes usar "Guardar el capital de hoy". Si sabes cuánto capital tenías antes, agrégalo abajo con su fecha.</div>`;
-  else {
-    const W = 760, Ht = 240, pl = 64, pr = 16, pt = 16, pb = 28;
-    const t0 = Date.parse(H[0].date), t1 = Date.parse(H[H.length - 1].date) || t0 + 1;
-    const vals = H.map((h) => h.capital), lo0 = Math.min(0, ...vals), hi0 = Math.max(...vals);
-    const step = niceStep((hi0 - lo0) / 4 || 1), lo = Math.floor(lo0 / step) * step, hi = Math.ceil(hi0 / step) * step || step;
-    const x = (d) => pl + (Date.parse(d) - t0) / ((t1 - t0) || 1) * (W - pl - pr), y = (v) => pt + (hi - v) / ((hi - lo) || 1) * (Ht - pt - pb);
-    const ticks = []; for (let v = lo; v <= hi + 1e-6; v += step) ticks.push(v);
-    const line = H.map((h, i) => `${i ? 'L' : 'M'}${x(h.date).toFixed(1)},${y(h.capital).toFixed(1)}`).join('');
-    const area = line + `L${x(H[H.length - 1].date).toFixed(1)},${y(Math.max(lo, 0)).toFixed(1)}L${x(H[0].date).toFixed(1)},${y(Math.max(lo, 0)).toFixed(1)}Z`;
-    const xt = [H[0], H[Math.floor((H.length - 1) / 2)], H[H.length - 1]].filter((h, i, a) => a.indexOf(h) === i);
-    const last = H[H.length - 1], first = H[0], diff = last.capital - first.capital;
-    chart = `<div class="row" style="justify-content:space-between"><span class="label">Capital real · ${H.length} registros</span><span class="num" style="font-size:13px;color:${diff >= 0 ? 'var(--ok)' : 'var(--bad)'}">${diff >= 0 ? '+' : ''}${money(diff)} desde ${fmtDate(first.date)}</span></div>
-    <div class="chart-wrap" id="capchart"><svg viewBox="0 0 ${W} ${Ht}" role="img" aria-label="Capital de la empresa en el tiempo">
-      ${ticks.map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pl - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="DM Mono, monospace">${money(v, 0).replace('$', '$')}</text>`).join('')}
-      ${xt.map((h) => `<text x="${x(h.date)}" y="${Ht - 8}" text-anchor="${h === H[0] ? 'start' : h === last ? 'end' : 'middle'}" font-size="11" fill="var(--muted)">${fmtDate(h.date)}</text>`).join('')}
-      <path d="${area}" fill="var(--accent)" fill-opacity="0.12"/>
-      <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-      ${H.map((h) => `<circle cx="${x(h.date)}" cy="${y(h.capital)}" r="${h === last ? 5 : 3.5}" fill="var(--accent)" stroke="var(--bg)" stroke-width="2"/>`).join('')}
-      <line id="cx" x1="0" x2="0" y1="${pt}" y2="${Ht - pb}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
-      <rect id="chit" x="${pl}" y="${pt}" width="${W - pl - pr}" height="${Ht - pt - pb}" fill="transparent"/>
-    </svg><div class="chart-tip" id="ctip" hidden></div></div>`;
-    ui.chart = { H, x, y, W };
-  }
-  const tbl = H.length ? `<details><summary class="label" style="cursor:pointer">Ver registros (${H.length})</summary><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Fecha</th><th class="r">Capital</th><th class="r">Inventario</th><th class="r">Bancos</th><th class="r">Deudas</th><th></th></tr></thead>
-    <tbody>${[...H].reverse().map((h) => `<tr><td class="num">${fmtDate(h.date)}</td><td class="r num">${money(h.capital)}</td><td class="r num">${h.inv != null ? money(h.inv, 0) : '—'}</td><td class="r num">${h.cash != null ? money(h.cash, 0) : '—'}</td><td class="r num">${h.debt != null ? money(h.debt, 0) : '—'}</td><td class="r">${dis ? `<button class="x" data-histdel="${esc(h.id)}" aria-label="Borrar registro" style="border:0;background:none;color:var(--muted)">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>` : '';
-  return `<div class="section"><h2>Cómo va subiendo el capital</h2>${chart}${form}${tbl}</div>`;
+const SER = { capital: ['Capital', '#00a08a'], inv: ['Inventario', '#c2410c'] };
+function monthEnd(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); }
+function monthLabel(ym) { const [y, m] = ym.split('-').map(Number); return ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][m - 1] + ' ' + y; }
+function vGrowth(C) {
+  const plan = { month: '2026-12', profit: 0, buy: 0, sell: 0, ...(Store.fin.plan || {}) };
+  const now = today();
+  if (monthEnd(plan.month) <= now) { const d = new Date(); d.setUTCMonth(d.getUTCMonth() + 2); plan.month = d.toISOString().slice(0, 7); }
+  const end = monthEnd(plan.month), months = (Date.parse(end) - Date.parse(now)) / 864e5 / 30.44;
+  const proj = { capital: C.capital + (+plan.profit || 0) * months, inv: Math.max(0, C.inv + ((+plan.buy || 0) - (+plan.sell || 0)) * months) };
+  const H = [...Store.hist].filter((h) => h.date && h.date < now).sort((a, b) => a.date.localeCompare(b.date));
+  const pts = [...H, { date: now, capital: C.capital, inv: C.inv, live: true }];
+  const dis = Store.canWrite ? '' : 'disabled';
+  const opts = []; { const d = new Date(); for (let k = 1; k <= 18; k++) { const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + k, 1)); opts.push(x.toISOString().slice(0, 7)); } }
+  const pin = (k, ph) => `<input id="fin-plan-${k}" data-plan="${k}" type="number" step="0.01" value="${esc(plan[k] || '')}" placeholder="${ph}" ${dis}>`;
+  const delta = (a, b) => { const d = b - a; return `<span style="color:${d >= 0 ? 'var(--ok)' : 'var(--bad)'}">${d >= 0 ? '+' : '−'}${money(Math.abs(d), 0).replace('−', '')}</span>`; };
+
+  // Gráfica: historia (línea sólida) + proyección hasta el mes elegido (línea punteada)
+  const W = 860, Ht = 280, pl = 70, pr = 110, pt = 18, pb = 30;
+  const t0 = Date.parse(pts[0].date), t1 = Date.parse(end);
+  const all = [...pts.map((p) => p.capital), ...pts.filter((p) => p.inv != null).map((p) => p.inv), proj.capital, proj.inv];
+  const lo0 = Math.min(0, ...all), hi0 = Math.max(...all, 1);
+  const step = niceStep((hi0 - lo0) / 4 || 1), lo = Math.floor(lo0 / step) * step, hi = Math.ceil(hi0 / step) * step;
+  const x = (d) => pl + (Date.parse(d) - t0) / ((t1 - t0) || 1) * (W - pl - pr), y = (v) => pt + (hi - v) / ((hi - lo) || 1) * (Ht - pt - pb);
+  const ticks = []; for (let v = lo; v <= hi + 1e-6; v += step) ticks.push(v);
+  const path = (arr, k) => arr.filter((p) => p[k] != null).map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p[k]).toFixed(1)}`).join('');
+  const xt = []; { const a = new Date(t0), b = new Date(t1); for (let d = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + 1, 1)); d <= b; d.setUTCMonth(d.getUTCMonth() + 1)) xt.push(d.toISOString().slice(0, 10)); }
+  const every = Math.ceil(xt.length / 7);
+  const lab = (k, v, yy) => `<text x="${W - pr + 10}" y="${yy + 4}" font-size="12" font-weight="600" fill="var(--fg)">${SER[k][0]}</text><text x="${W - pr + 10}" y="${yy + 19}" font-size="12" fill="var(--muted)">${money(v, 0)}</text>`;
+  let ly = { capital: y(proj.capital), inv: y(proj.inv) };
+  if (Math.abs(ly.capital - ly.inv) < 34) { const m = (ly.capital + ly.inv) / 2, up = ly.capital < ly.inv ? 'capital' : 'inv'; ly[up] = m - 17; ly[up === 'capital' ? 'inv' : 'capital'] = m + 17; }
+  ui.chart = { pts: [...pts, { date: end, capital: proj.capital, inv: proj.inv, proj: true }], x, y, W };
+  const svg = `<svg viewBox="0 0 ${W} ${Ht}" role="img" aria-label="Capital e inventario en el tiempo, con proyección a ${monthLabel(plan.month)}">
+    ${ticks.map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pl - 10}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${money(v, 0)}</text>`).join('')}
+    ${xt.filter((d, i) => i % every === 0).map((d) => `<text x="${x(d)}" y="${Ht - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+d.slice(5, 7) - 1]}</text>`).join('')}
+    <rect x="${x(now)}" y="${pt}" width="${Math.max(0, W - pr - x(now))}" height="${Ht - pt - pb}" fill="var(--bg-soft)"/>
+    <line x1="${x(now)}" x2="${x(now)}" y1="${pt}" y2="${Ht - pb}" stroke="var(--muted)" stroke-width="1"/>
+    <text x="${x(now) + 6}" y="${pt + 12}" font-size="11" fill="var(--muted)">Hoy · proyección →</text>
+    ${['inv', 'capital'].map((k) => `
+      <path d="${path(pts, k)}" fill="none" stroke="${SER[k][1]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M${x(now)},${y(k === 'capital' ? C.capital : C.inv)}L${x(end)},${y(proj[k])}" fill="none" stroke="${SER[k][1]}" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>
+      ${pts.filter((p) => p[k] != null).map((p) => `<circle cx="${x(p.date)}" cy="${y(p[k])}" r="${p.live ? 5 : 3.5}" fill="${SER[k][1]}" stroke="var(--bg)" stroke-width="2"/>`).join('')}
+      <circle cx="${x(end)}" cy="${y(proj[k])}" r="5" fill="var(--bg)" stroke="${SER[k][1]}" stroke-width="2"/>
+      ${lab(k, proj[k], ly[k])}`).join('')}
+    <line id="cx" x1="0" x2="0" y1="${pt}" y2="${Ht - pb}" stroke="var(--fg)" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
+    <rect id="chit" x="${pl}" y="${pt}" width="${W - pl - pr}" height="${Ht - pt - pb}" fill="transparent"/>
+  </svg>`;
+
+  const tbl = H.length ? `<details><summary class="label" style="cursor:pointer">Ver registros guardados (${H.length})</summary><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Fecha</th><th class="r">Capital</th><th class="r">Inventario</th><th class="r">Bancos</th><th class="r">Deudas</th><th></th></tr></thead>
+    <tbody>${[...H].reverse().map((h) => `<tr><td class="num">${fmtDate(h.date)}</td><td class="r num">${money(h.capital)}</td><td class="r num">${h.inv != null ? money(h.inv, 0) : '—'}</td><td class="r num">${h.cash != null ? money(h.cash, 0) : '—'}</td><td class="r num">${h.debt != null ? money(h.debt, 0) : '—'}</td><td class="r">${Store.canWrite ? `<button class="x" data-histdel="${esc(h.id)}" aria-label="Borrar registro" style="border:0;background:none;color:var(--muted)">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>` : '';
+  return `<section class="section" style="margin-top:32px">
+    <div class="section-head"><h2>Cómo va creciendo la empresa</h2><span class="muted" style="font-size:12px">Línea sólida: lo que ya pasó · punteada: proyección</span></div>
+    <div class="buckets">
+      <div class="bucket"><span class="head">Inventario hoy</span><span class="amt">${money(C.inv, 0)}</span><span class="sub">al costo</span></div>
+      <div class="bucket"><span class="head">Inventario en ${monthLabel(plan.month)}</span><span class="amt">${money(proj.inv, 0)}</span><span class="sub">${delta(C.inv, proj.inv)} vs hoy</span></div>
+      <div class="bucket"><span class="head">Capital en ${monthLabel(plan.month)}</span><span class="amt">${money(proj.capital, 0)}</span><span class="sub">${delta(C.capital, proj.capital)} vs hoy (${money(C.capital, 0)})</span></div>
+    </div>
+    <div class="ledger-col" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+      <div class="lrow"><label>Proyectar hasta <select id="fin-plan-month" data-plan="month" ${dis} style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)">${opts.map((o) => `<option value="${o}" ${o === plan.month ? 'selected' : ''}>${monthLabel(o)}</option>`).join('')}</select></label>
+        <label>Ganancia neta al mes ${pin('profit', '0.00')}</label><label>Compras de inventario al mes ${pin('buy', '0.00')}</label><label>Inventario que vendes al mes (al costo) ${pin('sell', '0.00')}</label></div>
+      <div class="sku" style="font-family:var(--font-body)">Capital proyectado = capital de hoy + ganancia neta × meses. Inventario proyectado = inventario de hoy + (compras − lo que vendes) × meses. Faltan ${months.toFixed(1)} meses para el cierre de ${monthLabel(plan.month)}.</div>
+    </div>
+    <div class="chart-wrap" id="capchart">
+      <div class="row" style="gap:16px;font-size:12px;color:var(--muted);margin-bottom:6px">${Object.values(SER).map(([l, c]) => `<span style="display:inline-flex;gap:6px;align-items:center"><i class="dot" style="background:${c};border-radius:50%"></i>${l}</span>`).join('')}</div>
+      ${svg}<div class="chart-tip" id="ctip" hidden></div>
+      ${H.length < 1 ? `<p class="sku" style="font-family:var(--font-body);margin:6px 0 4px">La parte sólida se va llenando sola: cada día que cambias algo de inventario o capital se guarda el valor de ese día. Si sabes cuánto capital tenías antes, agrégalo abajo.</p>` : ''}
+    </div>
+    ${Store.canWrite ? `<div class="row"><span class="label">Agregar un registro pasado</span><input id="hist-date" type="date" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px"><input id="hist-amt" type="number" step="0.01" placeholder="Capital ese día" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;width:140px"><input id="hist-inv" type="number" step="0.01" placeholder="Inventario ese día" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;width:150px"><button class="btn small" id="hist-add">Agregar</button><button class="btn small primary" id="snap">Guardar el día de hoy</button></div>` : ''}
+    ${tbl}
+  </section>`;
 }
 function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const f = raw / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
 function bindChart() {
   const wrap = $('#capchart'); if (!wrap || !ui.chart) return;
-  const { H, x, y, W } = ui.chart, svg = wrap.querySelector('svg'), tip = $('#ctip'), cx = $('#cx');
+  const { pts, x, y, W } = ui.chart, svg = wrap.querySelector('svg'), tip = $('#ctip'), cx = $('#cx');
   const move = (ev) => {
-    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
-    let best = H[0]; for (const h of H) if (Math.abs(x(h.date) - px) < Math.abs(x(best.date) - px)) best = h;
+    const r = svg.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    let best = pts[0]; for (const p of pts) if (Math.abs(x(p.date) - px) < Math.abs(x(best.date) - px)) best = p;
     cx.setAttribute('x1', x(best.date)); cx.setAttribute('x2', x(best.date)); cx.setAttribute('visibility', 'visible');
-    tip.hidden = false; tip.style.left = (x(best.date) / W * r.width + 12) + 'px'; tip.style.top = (y(best.capital) / (r.height / r.width * W) * r.height + 4) + 'px';
-    tip.innerHTML = `${fmtDate(best.date)}<br><b>${money(best.capital)}</b>${best.inv != null ? `<br>Inventario ${money(best.inv, 0)} · Deudas ${money(best.debt, 0)}` : ''}`;
+    const sx = r.width / W;
+    tip.hidden = false; tip.style.left = (r.left - wr.left + x(best.date) * sx) + 'px'; tip.style.top = (r.top - wr.top + y(best.capital) * sx - 8) + 'px';
+    tip.innerHTML = `${best.proj ? 'Proyección · ' : best.live ? 'Hoy · ' : ''}${fmtDate(best.date)}<br><span style="color:${SER.capital[1]}">●</span> Capital <b>${money(best.capital, 0)}</b>${best.inv != null ? `<br><span style="color:${SER.inv[1]}">●</span> Inventario <b>${money(best.inv, 0)}</b>` : ''}`;
   };
   const hit = $('#chit'); hit.addEventListener('pointermove', move); hit.addEventListener('pointerleave', () => { tip.hidden = true; cx.setAttribute('visibility', 'hidden'); });
 }
@@ -1532,7 +1579,8 @@ document.addEventListener('click', async (e) => {
   if (t.id === 'hist-add') {
     const d = $('#hist-date').value, a = parseFloat($('#hist-amt').value);
     if (!d || isNaN(a)) return showToast('Pon la fecha y el capital de ese día.');
-    await Store.saveSnap(d, { date: d, capital: a, manual: true }); return showToast('Registro agregado');
+    const iv = parseFloat($('#hist-inv').value);
+    await Store.saveSnap(d, { date: d, capital: a, ...(isNaN(iv) ? {} : { inv: iv }), manual: true }); return showToast('Registro agregado');
   }
   if (t.id === 'add-prod') {
     const name = $('#new-name').value.trim(); if (!name) return showToast('Escribe el nombre del producto.');
@@ -1570,6 +1618,12 @@ document.addEventListener('change', async (e) => {
     const F = JSON.parse(JSON.stringify(Store.fin)), row = (F[t.dataset.fin] || []).find((r) => r.id === t.dataset.id);
     if (row) row[t.dataset.k] = t.type === 'number' ? (t.value === '' ? null : parseFloat(t.value) || 0) : t.value.trim();
     try { await Store.saveFin(F); autoSnap(); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    return;
+  }
+  if (t.dataset.plan) {
+    const F = JSON.parse(JSON.stringify(Store.fin)); F.plan = { month: '2026-12', ...(F.plan || {}) };
+    F.plan[t.dataset.plan] = t.dataset.plan === 'month' ? t.value : (parseFloat(t.value) || 0);
+    try { await Store.saveFin(F); } catch (err) { showToast('No se pudo guardar.'); }
     return;
   }
   if (t.dataset.finfield) {
