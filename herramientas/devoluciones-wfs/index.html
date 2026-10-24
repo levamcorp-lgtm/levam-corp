@@ -1,16 +1,18 @@
-<title>Control de Devoluciones WFS</title>
+<title>Cuadra para vendedores WFS</title>
 <meta charset="utf-8">
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-/* Layout: herramienta de conciliación — franja de resumen en dólares arriba, pestañas por reporte, tablas densas debajo. Identidad neutra: verde petróleo, líneas finas, etiquetas en versalitas. */
+/* Layout: app comercial — barra superior fija con marca y navegación, encabezado de página, tarjetas blancas con borde suave. Solo tema claro (pedido del usuario). Marca: verde petróleo. */
 :root {
   --bg: #ffffff;
-  --bg-soft: #f5f7fa;
-  --fg: #111418;
-  --muted: #687280;
-  --line: rgba(17, 32, 56, 0.11);
+  --bg-soft: #f6f8fa;
+  --fg: #0f172a;
+  --muted: #64748b;
+  --line: #e5e8ee;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --radius: 12px;
   --accent: #0f766e;
   --accent-dim: rgba(15, 118, 110, 0.09);
   --ok: #23774a;
@@ -20,24 +22,10 @@
   --bad: #c0392b;
   --bad-dim: rgba(192, 57, 43, 0.10);
   --grey-dim: rgba(104, 114, 128, 0.12);
-  --font-body: "DM Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-num: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0e1218; --bg-soft: #161c25; --fg: #e7ecf2; --muted: #8e99a7; --line: rgba(205, 220, 240, 0.12);
-    --accent: #3fb8aa; --accent-dim: rgba(63, 184, 170, 0.13);
-    --ok: #52b884; --ok-dim: rgba(82, 184, 132, 0.14); --warn: #e3a948; --warn-dim: rgba(227, 169, 72, 0.14);
-    --bad: #f0715d; --bad-dim: rgba(240, 113, 93, 0.14); --grey-dim: rgba(142, 153, 167, 0.16);
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0e1218; --bg-soft: #161c25; --fg: #e7ecf2; --muted: #8e99a7; --line: rgba(205, 220, 240, 0.12);
-  --accent: #3fb8aa; --accent-dim: rgba(63, 184, 170, 0.13);
-  --ok: #52b884; --ok-dim: rgba(82, 184, 132, 0.14); --warn: #e3a948; --warn-dim: rgba(227, 169, 72, 0.14);
-  --bad: #f0715d; --bad-dim: rgba(240, 113, 93, 0.14); --grey-dim: rgba(142, 153, 167, 0.16);
-  color-scheme: dark;
+  --font-body: "Figtree", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "Figtree", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-code: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
 }
 * { box-sizing: border-box; }
 body {
@@ -45,7 +33,7 @@ body {
   -webkit-font-smoothing: antialiased; margin: 0;
 }
 .wrap {
-  max-width: 1180px; margin: 0 auto;
+  max-width: 1600px; margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 20px 48px;
 }
@@ -159,11 +147,13 @@ td .sku { font-size: 11px; color: var(--muted); font-family: var(--font-num); }
 .box li.lost .t { color: var(--bad); text-decoration: line-through; }
 
 /* Inventario */
-.inv-table td { vertical-align: middle; }
-.inv-table input { width: 78px; padding: 5px 7px; border: 0.5px solid var(--line); border-radius: 3px; background: var(--bg-soft); font-family: var(--font-num); font-size: 12px; text-align: right; }
+.inv-table td { vertical-align: middle; padding: 7px 6px; }
+.inv-table th { padding: 8px 6px; font-size: 10px; letter-spacing: 0.04em; white-space: normal; line-height: 1.25; }
+.inv-table input { width: 70px; padding: 5px 4px; border: 0.5px solid var(--line); border-radius: 3px; background: var(--bg-soft); font-family: var(--font-num); font-size: 12px; text-align: right; }
 .inv-table input::placeholder { color: var(--muted); opacity: 0.8; }
-.inv-table input.pct { width: 56px; }
-.inv-table .prodcell { display: flex; gap: 10px; align-items: center; min-width: 220px; max-width: 300px; }
+.inv-table input.pct { width: 50px; }
+.inv-table .prodcell { display: flex; gap: 8px; align-items: center; min-width: 190px; max-width: 240px; }
+.inv-table .prodcell .item { max-width: 19ch !important; }
 .inv-table .prodcell .thumb { width: 36px; height: 36px; font-size: 10px; }
 .inv-table tfoot td { font-weight: 600; background: var(--bg-soft); border-top: 0.5px solid var(--line); }
 .inv-table th.grp { text-align: center; border-left: 0.5px solid var(--line); }
@@ -283,24 +273,93 @@ dialog::backdrop { background: rgba(10, 14, 20, 0.45); }
   .finding { grid-template-columns: 4px minmax(0, 1fr); }
   .finding .amt { grid-column: 2; text-align: left; }
 }
+/* ===== Look comercial ===== */
+body { font-variant-numeric: tabular-nums; background: var(--bg); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.appbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: rgba(255, 255, 255, 0.92); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
+.appbar-in { max-width: 1600px; margin: 0 auto; display: flex; align-items: center; gap: 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; flex: none; }
+.logo { width: 32px; height: 32px; flex: none; }
+.pname { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+.pseller { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.appbar nav.tabs { margin: 0; border: 0; flex: 1 1 auto; min-width: 0; gap: 2px; }
+.appbar nav.tabs button { border: 0; border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.appbar nav.tabs button:hover { color: var(--fg); background: var(--bg-soft); }
+.appbar nav.tabs button[aria-selected="true"] { color: var(--accent); background: var(--accent-dim); border: 0; }
+.appbar-meta { flex: none; }
+.status { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; white-space: nowrap; }
+.status i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-dim); }
+.wrap { padding-block: 28px 64px; }
+.pagehead { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 22px; }
+.pagehead h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.025em; margin: 0; }
+.pagehead p { margin: 4px 0 0; font-size: 14px; }
+.chip { border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted); padding: 4px 10px; }
+.chip b { font-family: var(--font-body); }
+h2 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.label { letter-spacing: 0.04em; font-weight: 500; }
+.num, .amt, .big, .pend, .u, .n { font-family: var(--font-body); font-variant-numeric: tabular-nums; }
+.sku, .trk, .box-head .trk, textarea.out { font-family: var(--font-code); }
+textarea.out { font-size: 12px; }
+.btn { border-radius: 8px; border: 1px solid var(--line); font-weight: 500; font-size: 13px; padding: 8px 14px; box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04); }
+.btn.small { padding: 5px 11px; font-size: 12px; }
+.btn.primary { box-shadow: 0 1px 2px rgba(15, 118, 110, 0.35); }
+.filter { border: 1px solid var(--line); padding: 6px 12px; font-weight: 500; }
+.filter[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.search, .field input, .field select, .field textarea, .lrow input, .inv-table input { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.search:focus, .field input:focus, .lrow input:focus, .inv-table input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.buckets { gap: 12px; border: 0; border-radius: 0; }
+.buckets > .bucket:nth-child(n) { border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; background: var(--bg); }
+.buckets > .bucket:hover { background: var(--bg); border-color: #cfd5de; }
+.bucket .amt { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.bucket .head { font-weight: 500; color: var(--muted); }
+.hero-main { border-radius: var(--radius); background: linear-gradient(160deg, var(--bad-dim), rgba(192, 57, 43, 0.03)); border: 1px solid rgba(192, 57, 43, 0.18); padding: 22px 24px; }
+.hero-main .big { font-size: 42px; font-weight: 700; letter-spacing: -0.03em; }
+.cap-hero { border-radius: var(--radius); background: linear-gradient(160deg, var(--accent-dim), rgba(15, 118, 110, 0.02)); border: 1px solid rgba(15, 118, 110, 0.18); }
+.cap-hero .big { font-weight: 700; letter-spacing: -0.03em; }
+.findings, .table-wrap, .box, .prod, .report, .inc, .ledger-col, .chart-wrap, .claim-list, .empty, .drop { border-radius: var(--radius); }
+.findings, .table-wrap, .box, .prod, .report, .inc, .ledger-col, .chart-wrap, .claim-list { border: 1px solid var(--line); box-shadow: var(--shadow); background: var(--bg); }
+.prod:hover, .box:hover { border-color: #cfd5de; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06); }
+.prod .pend { font-size: 24px; font-weight: 700; }
+.locs { gap: 12px; border: 0; }
+.locs > .loc:nth-child(n) { border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
+.loc .u { font-size: 24px; font-weight: 700; }
+.bar { height: 10px; border-radius: 999px; }
+th { background: #f8fafc; color: var(--muted); font-weight: 600; letter-spacing: 0.04em; border-bottom: 1px solid var(--line); }
+td { border-bottom: 1px solid #eef1f5; }
+.pill { padding: 3px 9px; font-weight: 600; }
+.thumb { border-radius: 8px; border: 1px solid var(--line); }
+.ledger-col > header, .claim-group > header { background: #f8fafc; }
+.lgroup { border-bottom: 1px solid #eef1f5; }
+dialog { border-radius: 16px; border: 1px solid var(--line); box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18); }
+.toast { border-radius: 10px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2); }
+@media (max-width: 1100px) {
+  .appbar-in { flex-wrap: wrap; gap: 8px 16px; }
+  .appbar nav.tabs { order: 3; flex-basis: 100%; overflow-x: auto; }
+  .appbar-meta { margin-left: auto; }
+}
+@media (max-width: 560px) {
+  .pagehead h1 { font-size: 22px; }
+  .hero-main .big { font-size: 34px; }
+  .locs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
-<div class="wrap">
-  <header class="top">
+<header class="appbar">
+  <div class="appbar-in">
     <div class="brand">
-      <div>
-        <div class="eyebrow" id="seller">Walmart Marketplace · WFS</div>
-        <h1>Control de devoluciones y cobros</h1>
-      </div>
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--accent)"/><path d="M10 11h9a4 4 0 0 1 0 8h-7" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 15.5 10.5 19l3.5 3.5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div><div class="pname">Cuadra</div><div class="pseller" id="seller">Walmart Marketplace · WFS</div></div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-      <div class="coverage" id="coverage"></div>
-      <div class="mode" id="mode">Cargando datos…</div>
-    </div>
-  </header>
-
-  <nav class="tabs" role="tablist" id="tabs"></nav>
+    <nav class="tabs" role="tablist" id="tabs"></nav>
+    <div class="appbar-meta"><span class="status"><i></i><span id="mode">Cargando…</span></span></div>
+  </div>
+</header>
+<div class="wrap">
+  <div class="pagehead">
+    <div><h1 id="ptitle">Resumen</h1><p id="psub" class="muted"></p></div>
+    <div class="coverage" id="coverage"></div>
+  </div>
   <main id="view"></main>
 </div>
 
@@ -855,6 +914,10 @@ function render() {
   const cov = M.coverage;
   $('#coverage').innerHTML = [['Devoluciones', cov.returns], ['Enviado a ti', cov.rtv], ['Settlement', cov.settle]]
     .map(([l, r]) => `<span class="chip">${l} <b class="num">${r ? esc(r.split(' – ').map(fmtDate).join(' – ')) : 'sin cargar'}</b></span>`).join('');
+  const PT = { resumen: ['Resumen', 'Cuánto dinero tienes en devoluciones y qué hay que reclamar'], productos: ['Por producto', 'Dinero pendiente en devoluciones por cada SKU'],
+    inventario: ['Inventario y capital', 'Dónde está tu mercancía, cuánto vale y cuánto capital tiene la empresa'], cajas: ['Por llegarte', 'Lo que Walmart dice que te mandó: confirma lo que llega'],
+    devoluciones: ['Devoluciones', 'Cada devolución, su estado y dónde está'], cobros: ['Cobros WFS', 'Cargos y reembolsos del settlement de WFS'], reclamos: ['Reclamos', 'Arma el caso para Walmart en un clic'], cargar: ['Cargar reportes', 'Sube los reportes de Seller Center y ajusta la herramienta'] }[ui.tab];
+  $('#ptitle').textContent = PT[0]; $('#psub').textContent = PT[1];
   $('#seller').textContent = (Store.cfg.empresa ? Store.cfg.empresa + ' · ' : '') + 'Walmart Marketplace · WFS';
   $('#mode').textContent = Store.mode === 'db' ? (Store.canWrite ? 'Guardado en la nube' : 'Solo lectura') : 'Guardado en este navegador';
   const nClaims = M.claims.length;
@@ -1042,7 +1105,7 @@ function invRows() {
     const coming = r.p ? r.p.incoming.length : 0;
     const units = wfs + inbound + wh + home + coming;
     const claim = r.p ? r.p.amt.recuperar : 0;
-    return { ...r, x, price, fee, pct, cost, net, wfs, inbound, wh, home, coming, units, claim, valCost: units * cost, valNet: units * net, profit: units * (net - cost),
+    return { ...r, x, price, fee, pct, cost, net, wfs, inbound, wh, home, coming, units, claim, valCost: units * cost, valNet: units * net, profit: cost ? units * (net - cost) : 0,
       guessPrice: n('price') == null, guessFee: n('wfsFee') == null, guessPct: n('referral') == null };
   });
 }
@@ -1074,7 +1137,7 @@ function vInventario() {
   <div class="buckets" style="margin-top:12px">
     <div class="bucket"><span class="head">Inventario al costo</span><span class="amt">${money(tot.cost)}</span><span class="sub">Lo que te costó todo</span></div>
     <div class="bucket"><span class="head">Valor neto de venta</span><span class="amt">${money(tot.net)}</span><span class="sub">Precio − WFS fee − referral fee</span></div>
-    <div class="bucket"><span class="head">Ganancia esperada</span><span class="amt" style="color:${tot.profit >= 0 ? 'var(--ok)' : 'var(--bad)'}">${money(tot.profit)}</span><span class="sub">Si vendes todo a ese precio</span></div>
+    <div class="bucket"><span class="head">Ganancia esperada</span><span class="amt" style="color:${tot.profit >= 0 ? 'var(--ok)' : 'var(--bad)'}">${money(tot.profit)}</span><span class="sub">${noCost ? 'Solo de los productos con costo' : 'Si vendes todo a ese precio'}</span></div>
   </div>
   ${noCost ? `<div class="findings"><div class="finding"><span class="stripe" style="background:var(--warn)"></span><div><h3>Falta el costo de ${noCost} productos</h3><p>Escribe en la columna Costo lo que te cuesta cada unidad. Sin el costo, el inventario, la ganancia y el capital salen incompletos.</p></div></div></div>` : ''}
   <p class="prose" style="margin:0">Escribe cuántas unidades tienes <b>en WFS</b>, <b>en camino a WFS</b> y <b>en tu warehouse</b>. Las devoluciones en casa y por llegar se cuentan solas con lo que marcas en "Por llegarte". Si tienes devoluciones guardadas que no salen ahí, súmalas en el cuadrito "+". Los números en gris son sugeridos: escribe encima para usar los tuyos.</p>

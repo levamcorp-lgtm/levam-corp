@@ -1,4 +1,4 @@
-# Control de devoluciones WFS
+# Cuadra — control para vendedores WFS
 
 Herramienta para cruzar los reportes de Walmart WFS y ver cuánto dinero hay en devoluciones, qué nunca llegó y qué reclamar.
 
