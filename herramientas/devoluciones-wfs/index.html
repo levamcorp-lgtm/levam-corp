@@ -169,6 +169,41 @@ td .sku { font-size: 11px; color: var(--muted); font-family: var(--font-num); }
 .inv-table th.grp { text-align: center; border-left: 0.5px solid var(--line); }
 .inv-table .bl { border-left: 0.5px solid var(--line); }
 
+.locs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; border: 0.5px solid var(--line); border-radius: 4px; margin-bottom: 12px; }
+.loc { padding: 12px 14px; border-right: 0.5px solid var(--line); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.loc:last-child { border-right: 0; }
+.loc .u { font-family: var(--font-num); font-size: 20px; font-weight: 500; }
+.loc .head { display: flex; gap: 7px; align-items: center; font-size: 12px; }
+.homecell { display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.cap-hero { display: flex; flex-wrap: wrap; gap: 12px 32px; align-items: flex-end; padding: 20px; border-radius: 4px; background: var(--accent-dim); }
+.cap-hero .big { font-family: var(--font-num); font-size: 38px; font-weight: 500; line-height: 1.1; letter-spacing: -0.02em; }
+.cap-hero .eq { font-size: 13px; color: var(--muted); max-width: 60ch; }
+.ledger { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.ledger-col { border: 0.5px solid var(--line); border-radius: 4px; }
+.ledger-col > header { display: flex; justify-content: space-between; padding: 12px 14px; border-bottom: 0.5px solid var(--line); background: var(--bg-soft); font-weight: 600; font-size: 13px; }
+.lgroup { padding: 12px 14px; border-bottom: 0.5px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.lgroup:last-child { border-bottom: 0; }
+.lgroup .gh { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); align-items: baseline; }
+.lgroup .gh b { color: var(--fg); font-family: var(--font-num); font-weight: 500; font-size: 14px; }
+.lrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lrow input { padding: 6px 8px; border: 0.5px solid var(--line); border-radius: 3px; background: var(--bg-soft); font-size: 12px; min-width: 0; }
+.lrow input[type=number] { font-family: var(--font-num); text-align: right; width: 96px; }
+.lrow input.nm { flex: 1 1 140px; }
+.lrow .x { border: 0; background: none; color: var(--muted); padding: 4px 6px; font-size: 14px; }
+.lrow .x:hover { color: var(--bad); }
+.lrow .auto { flex: 1; font-size: 12px; }
+.lrow label { font-size: 11px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.lrow .auto .sku { font-size: 11px; color: var(--muted); }
+.meter { height: 6px; border-radius: 3px; background: var(--grey-dim); overflow: hidden; flex: 1 1 100%; }
+.meter span { display: block; height: 100%; border-radius: 3px; }
+.loan-meta { font-size: 11px; color: var(--muted); font-family: var(--font-num); flex: 1 1 100%; }
+.addlink { border: 0; background: none; color: var(--accent); font-size: 12px; padding: 2px 0; text-align: left; }
+.chart-wrap { position: relative; border: 0.5px solid var(--line); border-radius: 4px; padding: 12px 12px 4px; }
+.chart-wrap svg { display: block; width: 100%; height: auto; }
+.chart-tip { position: absolute; pointer-events: none; background: var(--fg); color: var(--bg); font-size: 12px; padding: 7px 10px; border-radius: 3px; white-space: nowrap; transform: translate(-50%, -100%); }
+.chart-tip b { font-family: var(--font-num); font-weight: 500; }
+@media (max-width: 820px) { .ledger { grid-template-columns: minmax(0, 1fr); } .locs { grid-template-columns: repeat(2, minmax(0, 1fr)); } .loc { border-bottom: 0.5px solid var(--line); } }
+
 /* Productos */
 .thumb { width: 56px; height: 56px; border-radius: 4px; background: var(--bg-soft); border: 0.5px solid var(--line); object-fit: contain; flex: none; display: grid; place-items: center; font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.04em; overflow: hidden; }
 .thumb.lg { width: 120px; height: 120px; font-size: 14px; }
@@ -694,7 +729,7 @@ const Core = (() => {
 const CHUNK = 150;
 const Store = {
   mode: 'local', db: null, canWrite: true, listeners: [],
-  data: { returns: [], rtv: [], settle: [], settlePeriod: null }, marks: {}, products: {}, cfg: { dias: 45 }, ready: false,
+  data: { returns: [], rtv: [], settle: [], settlePeriod: null }, marks: {}, products: {}, fin: { cash: [], loans: [], credits: [], assets: [], walmartPending: 0 }, hist: [], cfg: { dias: 45 }, ready: false,
   emit() { this.listeners.forEach((f) => f()); },
   async init() {
     let db = null, user = null;
@@ -707,7 +742,7 @@ const Store = {
       this.mode = 'local';
       try {
         const s = JSON.parse(localStorage.getItem('wfs-control') || 'null');
-        if (s) { this.data = s.data || this.data; this.marks = s.marks || {}; this.products = s.products || {}; this.cfg = s.cfg || this.cfg; }
+        if (s) { this.data = s.data || this.data; this.marks = s.marks || {}; this.products = s.products || {}; this.fin = { ...this.fin, ...(s.fin || {}) }; this.hist = s.hist || []; this.cfg = s.cfg || this.cfg; }
       } catch (e) {}
       this.ready = true; this.emit();
     }
@@ -734,13 +769,15 @@ const Store = {
       snap.docs.forEach((d) => { m[d.id] = d.data(); });
       this.marks = m; gotMarks = true; done();
     }, () => { gotMarks = true; done(); });
+    this.db.doc('fin/main').onSnapshot((d) => { if (d.exists) this.fin = { cash: [], loans: [], credits: [], assets: [], walmartPending: 0, ...d.data() }; this.emit(); }, () => {});
+    this.db.collection('capital').onSnapshot((snap) => { this.hist = snap.docs.map((d) => ({ id: d.id, ...d.data() })); this.emit(); }, () => {});
     this.db.collection('products').onSnapshot((snap) => {
       const m = {}; snap.docs.forEach((d) => { m[d.id] = d.data(); }); this.products = m; this.emit();
     }, () => {});
     this.db.doc('meta/config').onSnapshot((d) => { if (d.exists) this.cfg = { ...this.cfg, ...d.data() }; this.emit(); });
   },
   persistLocal() {
-    try { localStorage.setItem('wfs-control', JSON.stringify({ data: this.data, marks: this.marks, products: this.products, cfg: this.cfg })); } catch (e) { showToast('El navegador no dejó guardar los datos.'); }
+    try { localStorage.setItem('wfs-control', JSON.stringify({ data: this.data, marks: this.marks, products: this.products, fin: this.fin, hist: this.hist, cfg: this.cfg })); } catch (e) { showToast('El navegador no dejó guardar los datos.'); }
   },
   async saveReport(type, rows, period) {
     if (this.mode === 'local') {
@@ -758,6 +795,16 @@ const Store = {
     if (this.mode === 'local') { if (val) this.marks[id] = val; else delete this.marks[id]; this.persistLocal(); this.emit(); return; }
     if (val) { this.marks[id] = val; this.emit(); await this.db.doc('marks/' + id).set(val); }
     else { delete this.marks[id]; this.emit(); await this.db.doc('marks/' + id).delete(); }
+  },
+  async saveFin(fin) {
+    this.fin = fin;
+    if (this.mode === 'local') { this.persistLocal(); this.emit(); return; }
+    this.emit(); await this.db.doc('fin/main').set(JSON.parse(JSON.stringify(fin)));
+  },
+  async saveSnap(id, val) {
+    this.hist = this.hist.filter((h) => h.id !== id); if (val) this.hist.push({ id, ...val });
+    if (this.mode === 'local') { this.persistLocal(); this.emit(); return; }
+    this.emit(); if (val) await this.db.doc('capital/' + id).set(val); else await this.db.doc('capital/' + id).delete();
   },
   async saveProduct(gtin, val) {
     this.products[gtin] = { ...(this.products[gtin] || {}), ...val };
@@ -793,7 +840,7 @@ const TYPE_ES = {
   Refund: 'Reembolso de Walmart a ti', InboundTransportationFee: 'Transporte de entrada a WFS', LostInventory: 'Inventario perdido (te pagan)',
   FoundInventory: 'Inventario encontrado (te descuentan)', StorageFee: 'Almacenamiento',
 };
-const TABS = [['resumen', 'Resumen'], ['productos', 'Por producto'], ['inventario', 'Inventario'], ['cajas', 'Por llegarte'], ['devoluciones', 'Devoluciones'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
+const TABS = [['resumen', 'Resumen'], ['productos', 'Por producto'], ['inventario', 'Inventario y capital'], ['cajas', 'Por llegarte'], ['devoluciones', 'Devoluciones'], ['cobros', 'Cobros WFS'], ['reclamos', 'Reclamos'], ['cargar', 'Cargar reportes']];
 const ui = { tab: 'resumen', retFilter: 'todas', q: '', limit: 60, boxFilter: 'pend', setFilter: 'todos', sel: null, confirmClear: false, log: [] };
 let M = null;
 
@@ -822,7 +869,8 @@ function render() {
   if (!hasData && ui.tab !== 'cargar') { v.innerHTML = emptyState(); return; }
   v.innerHTML = ({ resumen: vResumen, productos: vProductos, inventario: vInventario, devoluciones: vDevoluciones, cajas: vCajas, cobros: vCobros, reclamos: vReclamos, cargar: vCargar })[ui.tab]();
   if (ui.tab === 'reclamos') updateClaimText();
-  if (fid && fid.startsWith('inv-')) { const el = document.getElementById(fid); if (el) el.focus(); }
+  if (ui.tab === 'inventario') bindChart();
+  if (fid && (fid.startsWith('inv-') || fid.startsWith('fin-'))) { const el = document.getElementById(fid); if (el) el.focus(); }
 }
 
 function emptyState() {
@@ -989,65 +1037,183 @@ function invRows() {
     const pct = n('referral') ?? 15;
     const cost = n('cost') ?? 0;
     const net = price - fee - price * pct / 100;
-    const wfs = n('qtyWfs') ?? 0;
+    const wfs = n('qtyWfs') ?? 0, inbound = n('qtyInbound') ?? 0, wh = n('qtyWh') ?? 0;
     const home = (r.p ? r.p.home : 0) + (n('qtyHome') ?? 0);
     const coming = r.p ? r.p.incoming.length : 0;
-    const units = wfs + home + coming;
+    const units = wfs + inbound + wh + home + coming;
     const claim = r.p ? r.p.amt.recuperar : 0;
-    return { ...r, x, price, fee, pct, cost, net, wfs, home, coming, units, claim, valCost: units * cost, valNet: units * net, profit: units * (net - cost),
+    return { ...r, x, price, fee, pct, cost, net, wfs, inbound, wh, home, coming, units, claim, valCost: units * cost, valNet: units * net, profit: units * (net - cost),
       guessPrice: n('price') == null, guessFee: n('wfsFee') == null, guessPct: n('referral') == null };
   });
+}
+const LOCS = [['wfs', 'En Walmart (WFS)', 'var(--accent)', 'Disponible para vender'], ['inbound', 'Camino a Walmart', 'color-mix(in srgb, var(--accent) 50%, var(--bg))', 'Envíos a WFS sin recibir'],
+  ['wh', 'En tu warehouse', 'var(--fg)', 'Esperando para enviar'], ['home', 'Devoluciones en casa', 'var(--ok)', 'Recibidas de Walmart'], ['coming', 'Devoluciones por llegar', 'var(--warn)', 'Si no llegan, se reclaman']];
+function capitalNow(rows) {
+  const F = Store.fin, sum = (a, k) => (a || []).reduce((x, r) => x + (+r[k] || 0), 0);
+  const inv = rows.reduce((a, r) => a + r.valCost, 0), invNet = rows.reduce((a, r) => a + r.valNet, 0), claim = rows.reduce((a, r) => a + r.claim, 0);
+  const cash = sum(F.cash, 'amount'), other = sum(F.assets, 'amount'), pend = +F.walmartPending || 0;
+  const loans = sum(F.loans, 'balance'), credit = sum(F.credits, 'used');
+  const assets = cash + inv + claim + pend + other, debt = loans + credit;
+  return { inv, invNet, claim, cash, other, pend, loans, credit, assets, debt, capital: assets - debt, capitalNet: assets - inv + invNet - debt };
 }
 function vInventario() {
   const rows = invRows();
   const T = (f) => rows.reduce((a, r) => a + f(r), 0);
-  const tot = { cost: T((r) => r.valCost), net: T((r) => r.valNet), profit: T((r) => r.profit), claim: T((r) => r.claim),
-    wfsC: T((r) => r.wfs * r.cost), homeC: T((r) => r.home * r.cost), comingC: T((r) => r.coming * r.cost), units: T((r) => r.units) };
+  const tot = { cost: T((r) => r.valCost), net: T((r) => r.valNet), profit: T((r) => r.profit), claim: T((r) => r.claim), units: T((r) => r.units) };
   const noCost = rows.filter((r) => r.units > 0 && !r.cost).length;
   const dis = Store.canWrite ? '' : 'disabled';
-  const inp = (r, k, val, ph, cls = '') => `<input id="inv-${esc(r.id)}-${k}" data-inv="${esc(r.id)}" data-k="${k}" type="number" step="0.01" min="0" class="${cls}" value="${r.x[k] ?? ''}" placeholder="${ph}" ${dis} aria-label="${k}">`;
-  const parts = [['En WFS', tot.wfsC, 'var(--accent)'], ['En tu casa', tot.homeC, 'var(--ok)'], ['Por llegarte', tot.comingC, 'var(--warn)']];
-  const pTot = parts.reduce((a, x) => a + x[1], 0) || 1;
+  const inp = (r, k, ph, cls = '') => `<input id="inv-${esc(r.id)}-${k}" data-inv="${esc(r.id)}" data-k="${k}" type="number" step="0.01" min="0" class="${cls}" value="${r.x[k] ?? ''}" placeholder="${ph}" ${dis} aria-label="${k}">`;
+  const loc = LOCS.map(([k, l, c, d]) => ({ k, l, c, d, u: T((r) => r[k]), cost: T((r) => r[k] * r.cost), net: T((r) => r[k] * r.net) }));
+  const pTot = loc.reduce((a, x) => a + x.cost, 0) || 1;
+  const show = ui.invAll ? rows : rows.filter((r) => r.units > 0 || r.cost || r.manual);
   return `
-  <div class="buckets" style="margin-bottom:16px">
-    <div class="bucket"><span class="head">Inventario al costo</span><span class="amt">${money(tot.cost)}</span><span class="sub">${tot.units} unidades · lo que te costó</span></div>
+  <section class="section" style="margin-top:0">
+  <div class="section-head"><h2>Inventario</h2><span class="muted" style="font-size:12px">${tot.units} unidades · ${money(tot.cost)} al costo · ${money(tot.net)} neto de venta</span></div>
+  <div class="locs">${loc.map((x) => `<div class="loc"><span class="head"><i class="dot" style="background:${x.c}"></i>${x.l}</span><span class="u">${x.u}</span><span class="sku">${money(x.cost, 0)} al costo · ${money(x.net, 0)} neto</span><span class="sku" style="font-family:var(--font-body)">${x.d}</span></div>`).join('')}</div>
+  <div class="bar" role="img" aria-label="Inventario al costo por lugar">${loc.filter((x) => x.cost > 0).map((x) => `<span title="${x.l}: ${money(x.cost)}" style="width:${(x.cost / pTot * 100).toFixed(2)}%;background:${x.c}"></span>`).join('')}</div>
+  <div class="buckets" style="margin-top:12px">
+    <div class="bucket"><span class="head">Inventario al costo</span><span class="amt">${money(tot.cost)}</span><span class="sub">Lo que te costó todo</span></div>
     <div class="bucket"><span class="head">Valor neto de venta</span><span class="amt">${money(tot.net)}</span><span class="sub">Precio − WFS fee − referral fee</span></div>
-    <div class="bucket"><span class="head">Ganancia esperada</span><span class="amt" style="color:${tot.profit >= 0 ? 'var(--ok)' : 'var(--bad)'}">${money(tot.profit)}</span><span class="sub">Si vendes todo al precio de la tabla</span></div>
-    <div class="bucket"><span class="head">Por reclamar a Walmart</span><span class="amt" style="color:var(--bad)">${money(tot.claim)}</span><span class="sub">Devoluciones que nunca llegaron</span></div>
-    <div class="bucket"><span class="head">Inventario neto + reclamos</span><span class="amt">${money(tot.net + tot.claim)}</span><span class="sub">Lo que vale todo lo tuyo hoy</span></div>
-    <div class="bucket"><span class="head">Por llegarte</span><span class="amt">${money(tot.comingC)}</span><span class="sub">al costo · si no llega, se reclama</span></div>
+    <div class="bucket"><span class="head">Ganancia esperada</span><span class="amt" style="color:${tot.profit >= 0 ? 'var(--ok)' : 'var(--bad)'}">${money(tot.profit)}</span><span class="sub">Si vendes todo a ese precio</span></div>
   </div>
-  <div class="bar-block" style="margin-top:0">
-    <div class="bar" role="img" aria-label="Inventario al costo por lugar">${parts.filter((x) => x[1] > 0).map(([l, v, c]) => `<span title="${l}: ${money(v)}" style="width:${(v / pTot * 100).toFixed(2)}%;background:${c}"></span>`).join('')}</div>
-    <div class="bar-legend">${parts.map(([l, v, c]) => `<span><i class="dot" style="background:${c}"></i>${l} ${money(v, 0)}</span>`).join('')}</div>
-  </div>
-  ${noCost ? `<div class="findings" style="margin:12px 0"><div class="finding"><span class="stripe" style="background:var(--warn)"></span><div><h3>Falta el costo de ${noCost} productos</h3><p>Escribe en la columna Costo lo que te cuesta cada unidad. Sin el costo, el inventario y la ganancia salen incompletos.</p></div></div></div>` : ''}
-  <p class="prose" style="margin:12px 0">Los números en gris son sugeridos: el precio sale del promedio que Walmart le reembolsó al cliente, el WFS fee sale de tu settlement y el referral fee empieza en 15%. Escribe encima para usar tus valores. <b>En tu casa</b> cuenta solo las devoluciones que marcaste como recibidas. Si tienes más unidades guardadas, súmalas en "+ extra".</p>
+  ${noCost ? `<div class="findings"><div class="finding"><span class="stripe" style="background:var(--warn)"></span><div><h3>Falta el costo de ${noCost} productos</h3><p>Escribe en la columna Costo lo que te cuesta cada unidad. Sin el costo, el inventario, la ganancia y el capital salen incompletos.</p></div></div></div>` : ''}
+  <p class="prose" style="margin:0">Escribe cuántas unidades tienes <b>en WFS</b>, <b>en camino a WFS</b> y <b>en tu warehouse</b>. Las devoluciones en casa y por llegar se cuentan solas con lo que marcas en "Por llegarte". Si tienes devoluciones guardadas que no salen ahí, súmalas en el cuadrito "+". Los números en gris son sugeridos: escribe encima para usar los tuyos.</p>
+  <div class="toolbar" style="margin:0"><button class="filter" aria-pressed="${!ui.invAll}" data-invall="0">Con unidades o costo <span class="num">${rows.filter((r) => r.units > 0 || r.cost || r.manual).length}</span></button><button class="filter" aria-pressed="${!!ui.invAll}" data-invall="1">Todos los productos <span class="num">${rows.length}</span></button></div>
   <div class="table-wrap"><table class="inv-table">
-    <thead><tr><th rowspan="2">Producto</th><th class="grp" colspan="6">Por unidad</th><th class="grp" colspan="5">Unidades</th><th class="grp" colspan="3">Valor</th></tr>
+    <thead><tr><th rowspan="2">Producto</th><th class="grp" colspan="6">Por unidad</th><th class="grp" colspan="6">Unidades por lugar</th><th class="grp" colspan="3">Valor total</th></tr>
     <tr><th class="r bl">Costo</th><th class="r">Precio venta</th><th class="r">WFS fee</th><th class="r">Referral %</th><th class="r">Neto</th><th class="r">Ganancia</th>
-    <th class="r bl">En WFS</th><th class="r">En casa</th><th class="r">+ extra</th><th class="r">Por llegar</th><th class="r">Total</th>
+    <th class="r bl">En WFS</th><th class="r">Camino a WFS</th><th class="r">Warehouse</th><th class="r">Devol. en casa</th><th class="r">Devol. por llegar</th><th class="r">Total</th>
     <th class="r bl">Al costo</th><th class="r">Neto</th><th class="r">Ganancia</th></tr></thead>
-    <tbody>${rows.map((r) => `<tr>
+    <tbody>${show.map((r) => `<tr>
       <td><div class="prodcell">${r.manual ? '<div class="thumb">+</div>' : photo(r.id)}<div style="min-width:0"><div class="item" title="${esc(r.name)}" style="max-width:24ch">${esc(r.name)}</div><div class="sku">${esc(r.sku || (r.manual ? 'manual' : 'GTIN ' + r.id))}</div></div></div></td>
-      <td class="r bl">${inp(r, 'cost', r.cost, '0.00')}</td>
-      <td class="r">${inp(r, 'price', r.price, r.p && r.p.sugPrice ? r.p.sugPrice.toFixed(2) : '0.00')}</td>
-      <td class="r">${inp(r, 'wfsFee', r.fee, r.p && r.p.sugFee ? r.p.sugFee.toFixed(2) : '0.00')}</td>
-      <td class="r">${inp(r, 'referral', r.pct, '15', 'pct')}</td>
+      <td class="r bl">${inp(r, 'cost', '0.00')}</td>
+      <td class="r">${inp(r, 'price', r.p && r.p.sugPrice ? r.p.sugPrice.toFixed(2) : '0.00')}</td>
+      <td class="r">${inp(r, 'wfsFee', r.p && r.p.sugFee ? r.p.sugFee.toFixed(2) : '0.00')}</td>
+      <td class="r">${inp(r, 'referral', '15', 'pct')}</td>
       <td class="r num">${money(r.net)}</td>
       <td class="r num" style="color:${!r.cost ? 'var(--muted)' : r.net - r.cost >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.cost ? money(r.net - r.cost) + `<div class="sku">${r.price ? Math.round((r.net - r.cost) / r.price * 100) : 0}%</div>` : '—'}</td>
-      <td class="r bl">${inp(r, 'qtyWfs', r.wfs, '0')}</td>
-      <td class="r num">${r.p ? r.p.home : 0}</td>
-      <td class="r">${inp(r, 'qtyHome', 0, '0', 'pct')}</td>
+      <td class="r bl">${inp(r, 'qtyWfs', '0', 'pct')}</td>
+      <td class="r">${inp(r, 'qtyInbound', '0', 'pct')}</td>
+      <td class="r">${inp(r, 'qtyWh', '0', 'pct')}</td>
+      <td class="r"><span class="homecell"><span class="num" title="Recibidas según Por llegarte">${r.p ? r.p.home : 0}</span>+${inp(r, 'qtyHome', '0', 'pct')}</span></td>
       <td class="r num">${r.coming}</td>
       <td class="r num"><b>${r.units}</b></td>
       <td class="r num bl">${money(r.valCost, 0)}</td><td class="r num">${money(r.valNet, 0)}</td>
       <td class="r num" style="color:${r.profit >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.cost ? money(r.profit, 0) : '—'}</td></tr>`).join('')}</tbody>
-    <tfoot><tr><td>Total</td><td colspan="6" class="bl"></td><td class="r num bl">${T((r) => r.wfs)}</td><td class="r num">${T((r) => r.p ? r.p.home : 0)}</td><td class="r num">${T((r) => r.home - (r.p ? r.p.home : 0))}</td><td class="r num">${T((r) => r.coming)}</td><td class="r num">${tot.units}</td>
+    <tfoot><tr><td>Total</td><td colspan="6" class="bl"></td>${['wfs', 'inbound', 'wh', 'home', 'coming'].map((k, i) => `<td class="r num ${i ? '' : 'bl'}">${T((r) => r[k])}</td>`).join('')}<td class="r num">${tot.units}</td>
       <td class="r num bl">${money(tot.cost, 0)}</td><td class="r num">${money(tot.net, 0)}</td><td class="r num">${money(tot.profit, 0)}</td></tr></tfoot>
   </table></div>
-  ${Store.canWrite ? `<div class="row" style="margin-top:12px"><input id="new-name" placeholder="Nombre del producto" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);min-width:0;flex:1 1 220px;max-width:340px"><input id="new-sku" placeholder="SKU" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);width:180px"><button class="btn" id="add-prod">Agregar producto</button></div>
-  <p class="prose" style="margin-top:6px">Para productos que tienes en inventario pero que no han salido en ningún reporte de devoluciones.</p>` : ''}`;
+  ${Store.canWrite ? `<div class="row"><input id="new-name" placeholder="Nombre del producto" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);min-width:0;flex:1 1 220px;max-width:340px"><input id="new-sku" placeholder="SKU" style="padding:8px 10px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);width:180px"><button class="btn" id="add-prod">Agregar producto</button></div>` : ''}
+  </section>
+  ${vCapital(rows)}`;
+}
+
+function vCapital(rows) {
+  const C = capitalNow(rows), F = Store.fin;
+  const dis = Store.canWrite ? '' : 'disabled';
+  const fi = (list, r, k, ph, type = 'number', cls = '') => `<input id="fin-${list}-${esc(r.id)}-${k}" data-fin="${list}" data-id="${esc(r.id)}" data-k="${k}" type="${type}" ${type === 'number' ? 'step="0.01" min="0"' : ''} class="${cls}" value="${esc(r[k] ?? '')}" placeholder="${ph}" ${dis}>`;
+  const del = (list, r) => Store.canWrite ? `<button class="x" data-findel="${list}" data-id="${esc(r.id)}" aria-label="Quitar">✕</button>` : '';
+  const add = (list, l) => Store.canWrite ? `<button class="addlink" data-finadd="${list}">+ ${l}</button>` : '';
+  const sum = (a, k) => (a || []).reduce((x, r) => x + (+r[k] || 0), 0);
+  const monthly = sum(F.loans, 'payment');
+  const autoRow = (l, v, note) => `<div class="lrow"><span class="auto">${l}<div class="sku" style="font-family:var(--font-body)">${note}</div></span><span class="num">${money(v)}</span></div>`;
+  return `
+  <section class="section" style="margin-top:40px">
+    <div class="section-head"><h2>Capital de la empresa</h2><span class="muted" style="font-size:12px">Lo que tienes menos lo que debes</span></div>
+    <div class="cap-hero">
+      <div><div class="label" style="color:var(--accent)">Capital real</div><div class="big" style="color:${C.capital >= 0 ? 'var(--fg)' : 'var(--bad)'}">${money(C.capital)}</div></div>
+      <div class="eq">${money(C.assets)} en activos − ${money(C.debt)} en deudas. El inventario se cuenta al costo. Si lo cuentas a valor neto de venta, el capital sería <b class="num">${money(C.capitalNet)}</b>.</div>
+      ${Store.canWrite ? `<button class="btn primary small" id="snap">Guardar el capital de hoy</button>` : ''}
+    </div>
+    <div class="ledger">
+      <div class="ledger-col"><header><span>Lo que tienes</span><span class="num">${money(C.assets)}</span></header>
+        <div class="lgroup"><div class="gh"><span>Dinero en bancos</span><b>${money(C.cash)}</b></div>
+          ${(F.cash || []).map((r) => `<div class="lrow">${fi('cash', r, 'name', 'Cuenta (ej. Chase)', 'text', 'nm')}${fi('cash', r, 'amount', '0.00')}${del('cash', r)}</div>`).join('')}${add('cash', 'Agregar cuenta')}</div>
+        <div class="lgroup"><div class="gh"><span>Inventario y Walmart</span><b>${money(C.inv + C.claim + C.pend)}</b></div>
+          ${autoRow('Inventario al costo', C.inv, 'Sale de la tabla de arriba')}
+          ${autoRow('Por reclamar a Walmart', C.claim, 'Devoluciones que nunca llegaron')}
+          <div class="lrow"><span class="auto">Pago pendiente de Walmart<div class="sku" style="font-family:var(--font-body)">Lo que Walmart te va a depositar en el próximo pago</div></span><input id="fin-walmartPending" data-finfield="walmartPending" type="number" step="0.01" min="0" value="${esc(F.walmartPending || '')}" placeholder="0.00" ${dis}></div></div>
+        <div class="lgroup"><div class="gh"><span>Otros activos</span><b>${money(C.other)}</b></div>
+          ${(F.assets || []).map((r) => `<div class="lrow">${fi('assets', r, 'name', 'Ej. equipo, vehículo, depósito', 'text', 'nm')}${fi('assets', r, 'amount', '0.00')}${del('assets', r)}</div>`).join('')}${add('assets', 'Agregar activo')}</div>
+      </div>
+      <div class="ledger-col"><header><span>Lo que debes</span><span class="num" style="color:var(--bad)">${money(C.debt)}</span></header>
+        <div class="lgroup"><div class="gh"><span>Préstamos${monthly ? ` · pagas ${money(monthly)} al mes` : ''}</span><b>${money(C.loans)}</b></div>
+          ${(F.loans || []).map((r) => {
+            const orig = +r.original || 0, bal = +r.balance || 0, pay = +r.payment || 0, paid = orig ? Math.max(0, Math.min(1, (orig - bal) / orig)) : 0;
+            const months = pay ? Math.ceil(bal / pay) : null;
+            return `<div class="lrow" style="padding-bottom:6px;border-bottom:0.5px dashed var(--line)">${fi('loans', r, 'name', 'Con quién (ej. Kabbage)', 'text', 'nm')}${del('loans', r)}
+              <label class="sku">Monto original ${fi('loans', r, 'original', '0.00')}</label><label class="sku">Debes hoy ${fi('loans', r, 'balance', '0.00')}</label>
+              <label class="sku">Pago mensual ${fi('loans', r, 'payment', '0.00')}</label><label class="sku">Tasa % ${fi('loans', r, 'rate', '0')}</label>
+              ${orig ? `<div class="meter"><span style="width:${(paid * 100).toFixed(1)}%;background:var(--ok)"></span></div>` : ''}
+              <div class="loan-meta">${orig ? `Pagado ${Math.round(paid * 100)}% (${money(orig - bal, 0)} de ${money(orig, 0)})` : 'Escribe el monto original para ver cuánto llevas pagado'}${months ? ` · te faltan unos ${months} pagos` : ''}</div></div>`;
+          }).join('')}${add('loans', 'Agregar préstamo')}</div>
+        <div class="lgroup"><div class="gh"><span>Tarjetas y líneas de crédito</span><b>${money(C.credit)}</b></div>
+          ${(F.credits || []).map((r) => {
+            const lim = +r.limit || 0, used = +r.used || 0, u = lim ? used / lim : 0;
+            return `<div class="lrow" style="padding-bottom:6px;border-bottom:0.5px dashed var(--line)">${fi('credits', r, 'name', 'Tarjeta o línea', 'text', 'nm')}${del('credits', r)}
+              <label class="sku">Límite ${fi('credits', r, 'limit', '0.00')}</label><label class="sku">Usado ${fi('credits', r, 'used', '0.00')}</label>
+              ${lim ? `<div class="meter"><span style="width:${Math.min(100, u * 100).toFixed(1)}%;background:${u > 0.7 ? 'var(--bad)' : u > 0.3 ? 'var(--warn)' : 'var(--ok)'}"></span></div><div class="loan-meta">Usando ${Math.round(u * 100)}% · disponible ${money(lim - used, 0)}</div>` : ''}</div>`;
+          }).join('')}${add('credits', 'Agregar tarjeta o línea')}</div>
+      </div>
+    </div>
+    ${vCapChart()}
+  </section>`;
+}
+
+function vCapChart() {
+  const H = [...Store.hist].filter((h) => h.date).sort((a, b) => a.date.localeCompare(b.date));
+  const dis = Store.canWrite;
+  const form = dis ? `<div class="row"><span class="label">Agregar un registro pasado</span><input id="hist-date" type="date" style="padding:6px 8px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft)"><input id="hist-amt" type="number" step="0.01" placeholder="Capital ese día" style="padding:6px 8px;border:0.5px solid var(--line);border-radius:3px;background:var(--bg-soft);width:150px"><button class="btn small" id="hist-add">Agregar</button></div>` : '';
+  let chart;
+  if (H.length < 2) chart = `<div class="empty">${H.length ? `Hay un registro: ${fmtDate(H[0].date)}, ${money(H[0].capital)}.` : 'Todavía no hay registros.'} La gráfica se dibuja desde el segundo registro. Cada vez que cambies algo de inventario o capital se guarda el capital del día, o puedes usar "Guardar el capital de hoy". Si sabes cuánto capital tenías antes, agrégalo abajo con su fecha.</div>`;
+  else {
+    const W = 760, Ht = 240, pl = 64, pr = 16, pt = 16, pb = 28;
+    const t0 = Date.parse(H[0].date), t1 = Date.parse(H[H.length - 1].date) || t0 + 1;
+    const vals = H.map((h) => h.capital), lo0 = Math.min(0, ...vals), hi0 = Math.max(...vals);
+    const step = niceStep((hi0 - lo0) / 4 || 1), lo = Math.floor(lo0 / step) * step, hi = Math.ceil(hi0 / step) * step || step;
+    const x = (d) => pl + (Date.parse(d) - t0) / ((t1 - t0) || 1) * (W - pl - pr), y = (v) => pt + (hi - v) / ((hi - lo) || 1) * (Ht - pt - pb);
+    const ticks = []; for (let v = lo; v <= hi + 1e-6; v += step) ticks.push(v);
+    const line = H.map((h, i) => `${i ? 'L' : 'M'}${x(h.date).toFixed(1)},${y(h.capital).toFixed(1)}`).join('');
+    const area = line + `L${x(H[H.length - 1].date).toFixed(1)},${y(Math.max(lo, 0)).toFixed(1)}L${x(H[0].date).toFixed(1)},${y(Math.max(lo, 0)).toFixed(1)}Z`;
+    const xt = [H[0], H[Math.floor((H.length - 1) / 2)], H[H.length - 1]].filter((h, i, a) => a.indexOf(h) === i);
+    const last = H[H.length - 1], first = H[0], diff = last.capital - first.capital;
+    chart = `<div class="row" style="justify-content:space-between"><span class="label">Capital real · ${H.length} registros</span><span class="num" style="font-size:13px;color:${diff >= 0 ? 'var(--ok)' : 'var(--bad)'}">${diff >= 0 ? '+' : ''}${money(diff)} desde ${fmtDate(first.date)}</span></div>
+    <div class="chart-wrap" id="capchart"><svg viewBox="0 0 ${W} ${Ht}" role="img" aria-label="Capital de la empresa en el tiempo">
+      ${ticks.map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pl - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="DM Mono, monospace">${money(v, 0).replace('$', '$')}</text>`).join('')}
+      ${xt.map((h) => `<text x="${x(h.date)}" y="${Ht - 8}" text-anchor="${h === H[0] ? 'start' : h === last ? 'end' : 'middle'}" font-size="11" fill="var(--muted)">${fmtDate(h.date)}</text>`).join('')}
+      <path d="${area}" fill="var(--accent)" fill-opacity="0.12"/>
+      <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${H.map((h) => `<circle cx="${x(h.date)}" cy="${y(h.capital)}" r="${h === last ? 5 : 3.5}" fill="var(--accent)" stroke="var(--bg)" stroke-width="2"/>`).join('')}
+      <line id="cx" x1="0" x2="0" y1="${pt}" y2="${Ht - pb}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
+      <rect id="chit" x="${pl}" y="${pt}" width="${W - pl - pr}" height="${Ht - pt - pb}" fill="transparent"/>
+    </svg><div class="chart-tip" id="ctip" hidden></div></div>`;
+    ui.chart = { H, x, y, W };
+  }
+  const tbl = H.length ? `<details><summary class="label" style="cursor:pointer">Ver registros (${H.length})</summary><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Fecha</th><th class="r">Capital</th><th class="r">Inventario</th><th class="r">Bancos</th><th class="r">Deudas</th><th></th></tr></thead>
+    <tbody>${[...H].reverse().map((h) => `<tr><td class="num">${fmtDate(h.date)}</td><td class="r num">${money(h.capital)}</td><td class="r num">${h.inv != null ? money(h.inv, 0) : '—'}</td><td class="r num">${h.cash != null ? money(h.cash, 0) : '—'}</td><td class="r num">${h.debt != null ? money(h.debt, 0) : '—'}</td><td class="r">${dis ? `<button class="x" data-histdel="${esc(h.id)}" aria-label="Borrar registro" style="border:0;background:none;color:var(--muted)">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>` : '';
+  return `<div class="section"><h2>Cómo va subiendo el capital</h2>${chart}${form}${tbl}</div>`;
+}
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const f = raw / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
+function bindChart() {
+  const wrap = $('#capchart'); if (!wrap || !ui.chart) return;
+  const { H, x, y, W } = ui.chart, svg = wrap.querySelector('svg'), tip = $('#ctip'), cx = $('#cx');
+  const move = (ev) => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    let best = H[0]; for (const h of H) if (Math.abs(x(h.date) - px) < Math.abs(x(best.date) - px)) best = h;
+    cx.setAttribute('x1', x(best.date)); cx.setAttribute('x2', x(best.date)); cx.setAttribute('visibility', 'visible');
+    tip.hidden = false; tip.style.left = (x(best.date) / W * r.width + 12) + 'px'; tip.style.top = (y(best.capital) / (r.height / r.width * W) * r.height + 4) + 'px';
+    tip.innerHTML = `${fmtDate(best.date)}<br><b>${money(best.capital)}</b>${best.inv != null ? `<br>Inventario ${money(best.inv, 0)} · Deudas ${money(best.debt, 0)}` : ''}`;
+  };
+  const hit = $('#chit'); hit.addEventListener('pointermove', move); hit.addEventListener('pointerleave', () => { tip.hidden = true; cx.setAttribute('visibility', 'hidden'); });
+}
+let snapTimer;
+function autoSnap() { clearTimeout(snapTimer); snapTimer = setTimeout(() => saveSnapToday(false), 1500); }
+async function saveSnapToday(toast) {
+  if (!M) return;
+  const C = capitalNow(invRows());
+  const d = today();
+  try { await Store.saveSnap(d, { date: d, capital: Math.round(C.capital * 100) / 100, inv: Math.round(C.inv), cash: Math.round(C.cash), debt: Math.round(C.debt), claim: Math.round(C.claim) }); if (toast) showToast('Capital de hoy guardado: ' + money(C.capital)); }
+  catch (e) { if (toast) showToast('No se pudo guardar (' + (e.code || e) + ').'); }
 }
 
 async function uploadPhoto(gtin, file) {
@@ -1267,7 +1433,7 @@ function openReturn(k) {
 
 // Eventos
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],#add-prod,#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
+  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],[data-invall],[data-finadd],[data-findel],[data-histdel],#snap,#hist-add,#add-prod,#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
   if (!t) return;
   if (t.dataset.close !== undefined) return $('#dlg').close();
   if (t.dataset.tab) return go(t.dataset.tab);
@@ -1288,6 +1454,22 @@ document.addEventListener('click', async (e) => {
     const entries = b.items.filter((v) => !st || !v.mark).map((v) => [v.uid, st ? { estado: st, at: today() } : null]);
     try { await Store.saveMarks(entries); showToast(st ? `${entries.length} productos marcados` : 'Caja sin marcar'); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
     return;
+  }
+  if (t.dataset.invall) { ui.invAll = t.dataset.invall === '1'; return render(); }
+  if (t.dataset.finadd) {
+    const F = JSON.parse(JSON.stringify(Store.fin)); (F[t.dataset.finadd] = F[t.dataset.finadd] || []).push({ id: 'r' + Date.now() });
+    await Store.saveFin(F); return;
+  }
+  if (t.dataset.findel) {
+    const F = JSON.parse(JSON.stringify(Store.fin)); F[t.dataset.findel] = (F[t.dataset.findel] || []).filter((r) => r.id !== t.dataset.id);
+    await Store.saveFin(F); autoSnap(); return;
+  }
+  if (t.dataset.histdel) { await Store.saveSnap(t.dataset.histdel, null); return; }
+  if (t.id === 'snap') return saveSnapToday(true);
+  if (t.id === 'hist-add') {
+    const d = $('#hist-date').value, a = parseFloat($('#hist-amt').value);
+    if (!d || isNaN(a)) return showToast('Pon la fecha y el capital de ese día.');
+    await Store.saveSnap(d, { date: d, capital: a, manual: true }); return showToast('Registro agregado');
   }
   if (t.id === 'add-prod') {
     const name = $('#new-name').value.trim(); if (!name) return showToast('Escribe el nombre del producto.');
@@ -1318,7 +1500,18 @@ document.addEventListener('change', async (e) => {
   const t = e.target;
   if (t.dataset.inv) {
     const v = t.value.trim();
-    try { await Store.saveProduct(t.dataset.inv, { [t.dataset.k]: v === '' ? null : Math.max(0, parseFloat(v) || 0) }); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    try { await Store.saveProduct(t.dataset.inv, { [t.dataset.k]: v === '' ? null : Math.max(0, parseFloat(v) || 0) }); autoSnap(); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    return;
+  }
+  if (t.dataset.fin) {
+    const F = JSON.parse(JSON.stringify(Store.fin)), row = (F[t.dataset.fin] || []).find((r) => r.id === t.dataset.id);
+    if (row) row[t.dataset.k] = t.type === 'number' ? (t.value === '' ? null : parseFloat(t.value) || 0) : t.value.trim();
+    try { await Store.saveFin(F); autoSnap(); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
+    return;
+  }
+  if (t.dataset.finfield) {
+    const F = { ...Store.fin, [t.dataset.finfield]: parseFloat(t.value) || 0 };
+    try { await Store.saveFin(F); autoSnap(); } catch (err) { showToast('No se pudo guardar.'); }
     return;
   }
   if (t.id === 'photo-in' && t.files[0]) await uploadPhoto(t.dataset.gtin, t.files[0]);
