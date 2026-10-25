@@ -9,7 +9,7 @@
   --bg: #ffffff;
   --bg-soft: #f6f8fa;
   --fg: #0f172a;
-  --muted: #64748b;
+  --muted: #3b4554;
   --line: #e5e8ee;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
   --radius: 12px;
@@ -273,6 +273,44 @@ dialog::backdrop { background: rgba(10, 14, 20, 0.45); }
   .finding { grid-template-columns: 4px minmax(0, 1fr); }
   .finding .amt { grid-column: 2; text-align: left; }
 }
+/* Capital */
+.equation { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1.4fr); gap: 12px; align-items: stretch; }
+.eq-box { border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; justify-content: center; background: var(--bg); }
+.eq-box.main { background: linear-gradient(160deg, var(--accent-dim), rgba(15, 118, 110, 0.02)); border-color: rgba(15, 118, 110, 0.25); }
+.eq-l { font-size: 13px; font-weight: 600; color: var(--fg); }
+.eq-v { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); }
+.eq-v.big { font-size: 36px; }
+.eq-n { font-size: 12px; color: var(--muted); }
+.eq-op { align-self: center; font-size: 26px; font-weight: 600; color: var(--fg); }
+.ledger-col > header { align-items: center; padding: 14px 16px; }
+.ledger-col .lt { font-size: 13px; font-weight: 600; color: var(--fg); }
+.ledger-col .lv { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.lbar { display: flex; height: 10px; margin: 14px 16px 0; border-radius: 999px; overflow: hidden; background: var(--bg-soft); gap: 2px; }
+.lbar.tall { height: 14px; margin-bottom: 4px; }
+.lbar span { display: block; height: 100%; }
+.llegend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 16px 4px; font-size: 12px; color: var(--fg); }
+.llegend span { display: inline-flex; align-items: center; gap: 6px; }
+.lgroup .gh { color: var(--fg); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+.acct { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 6px 0; }
+.acct-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.acct-n { font-size: 14px; font-weight: 600; color: var(--fg); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.acct-s { font-size: 12px; color: var(--muted); }
+.acct-v { font-size: 15px; font-weight: 700; color: var(--fg); text-align: right; white-space: nowrap; }
+.acct-p { font-size: 11px; font-weight: 500; color: var(--muted); }
+.acct .meter { margin-top: 4px; max-width: 260px; }
+.acct-empty, .acct-note { font-size: 13px; color: var(--muted); padding: 4px 0; }
+.acct-note { padding: 0 16px 14px; color: var(--warn); }
+.tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; background: var(--bg-soft); border: 1px solid var(--line); color: var(--fg); }
+.badge { width: 36px; height: 36px; border-radius: 10px; display: inline-grid; place-items: center; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: -0.01em; flex: none; overflow: hidden; }
+.badge.img { background: var(--bg); border: 1px solid var(--line); }
+.badge img { width: 100%; height: 100%; object-fit: contain; }
+.debt-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 14px 16px 0; }
+.debt-kpis div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--bg-soft); min-width: 0; }
+.debt-kpis span { font-size: 11px; font-weight: 600; color: var(--muted); }
+.debt-kpis b { font-size: 17px; font-weight: 700; color: var(--fg); }
+.edit-card { padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+@media (max-width: 900px) { .equation { grid-template-columns: minmax(0, 1fr); } .eq-op { display: none; } .debt-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* ===== Look comercial ===== */
 body { font-variant-numeric: tabular-nums; background: var(--bg); }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
@@ -1177,59 +1215,118 @@ function vInventario() {
   <div class="findings" style="margin-top:20px"><div class="finding"><span class="stripe" style="background:var(--accent)"></span><div><h3>Bancos, deudas y gráfica de crecimiento</h3><p>El dinero en el banco, los préstamos, las tarjetas y la gráfica de inventario y capital (hoy y proyectado) están en la pestaña Capital y deudas.</p><div class="act"><button class="btn small primary" data-go="capital">Ir a Capital y deudas</button></div></div></div></div>`;
 }
 
+// Marcas conocidas: color e iniciales para identificar cada cuenta de un vistazo (o el logo que suba el usuario)
+const BRANDS = [[/chase/i, '#117aca', 'CH'], [/citi/i, '#056dae', 'citi'], [/amex|american express/i, '#2e77bc', 'AX'], [/walmart|walamrart/i, '#0071dc', 'W'],
+  [/bank of america|bofa/i, '#e31837', 'BA'], [/wells/i, '#d71e28', 'WF'], [/capital one/i, '#004879', 'C1'], [/paypal/i, '#003087', 'PP'], [/amazon/i, '#ff9900', 'a'],
+  [/shopify/i, '#5e8e3e', 'S'], [/stripe/i, '#635bff', 'S'], [/parafin/i, '#0f172a', 'P'], [/uncapped/i, '#5b21b6', 'U'], [/bluevine/i, '#1b4dff', 'B'],
+  [/discover/i, '#e55c20', 'D'], [/kabbage/i, '#00b140', 'K'], [/td\b/i, '#2e8b3e', 'TD'], [/us bank/i, '#0c2074', 'US'], [/mercury/i, '#1f2937', 'M'], [/brex/i, '#e2552b', 'B']];
+const CAT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+function badge(r, fallback = 'var(--accent)') {
+  if (r.logo) return `<span class="badge img"><img src="/_blob/${esc(r.logo)}" alt=""></span>`;
+  if (r.logoImg) return `<span class="badge img"><img src="${esc(r.logoImg)}" alt=""></span>`;
+  const b = BRANDS.find(([re]) => re.test(r.name || ''));
+  const ini = b ? b[2] : ((r.name || '?').replace(/[^A-Za-z0-9 ]/g, '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?');
+  return `<span class="badge" style="background:${b ? b[1] : fallback}">${esc(ini)}</span>`;
+}
+function debtsList() {
+  const F = Store.fin;
+  const L = (F.loans || []).map((r) => {
+    const orig = +r.original || 0, bal = +r.balance || 0, pay = +r.payment || 0, paid = orig ? Math.max(0, Math.min(1, (orig - bal) / orig)) : null;
+    return { ...r, list: 'loans', kind: 'Préstamo', amount: bal, meter: paid, meterColor: 'var(--ok)',
+      sub: [paid != null ? `Pagado ${Math.round(paid * 100)}% de ${money(orig, 0)}` : '', pay ? `${money(pay, 0)} al mes` : 'Falta el pago mensual', pay ? `faltan ~${Math.ceil(bal / pay)} pagos` : ''].filter(Boolean).join(' · ') };
+  });
+  const Cc = (F.credits || []).map((r) => {
+    const lim = +r.limit || 0, used = +r.used || 0, u = lim ? used / lim : null;
+    return { ...r, list: 'credits', kind: 'Tarjeta / crédito', amount: used, meter: u, meterColor: u > 0.7 ? 'var(--bad)' : u > 0.3 ? 'var(--warn)' : 'var(--ok)',
+      sub: lim ? `Usando ${Math.round(u * 100)}% de ${money(lim, 0)} · disponible ${money(lim - used, 0)}` : 'Falta el límite' };
+  });
+  return [...L, ...Cc].map((d, i) => ({ ...d, color: CAT[i % CAT.length] }));
+}
 function vCapital(rows) {
-  const C = capitalNow(rows), F = Store.fin;
+  const C = capitalNow(rows), F = Store.fin, D = debtsList();
   const dis = Store.canWrite ? '' : 'disabled';
   const fi = (list, r, k, ph, type = 'number', cls = '') => `<input id="fin-${list}-${esc(r.id)}-${k}" data-fin="${list}" data-id="${esc(r.id)}" data-k="${k}" type="${type}" ${type === 'number' ? 'step="0.01" min="0"' : ''} class="${cls}" value="${esc(r[k] ?? '')}" placeholder="${ph}" ${dis}>`;
-  const del = (list, r) => Store.canWrite ? `<button class="x" data-findel="${list}" data-id="${esc(r.id)}" aria-label="Quitar">✕</button>` : '';
+  const del = (list, r) => `<button class="x" data-findel="${list}" data-id="${esc(r.id)}" aria-label="Quitar">✕</button>`;
+  const logoBtn = (list, r) => `<label class="btn small" for="logo-${list}-${esc(r.id)}">Logo</label><input id="logo-${list}-${esc(r.id)}" type="file" accept="image/*" data-logo="${list}" data-id="${esc(r.id)}" hidden>`;
   const add = (list, l) => Store.canWrite ? `<button class="addlink" data-finadd="${list}">+ ${l}</button>` : '';
-  const sum = (a, k) => (a || []).reduce((x, r) => x + (+r[k] || 0), 0);
-  const monthly = sum(F.loans, 'payment');
-  const autoRow = (l, v, note) => `<div class="lrow"><span class="auto">${l}<div class="sku" style="font-family:var(--font-body)">${note}</div></span><span class="num">${money(v)}</span></div>`;
+  const acct = (b, name, sub, amt, extra = '') => `<div class="acct">${b}<div class="acct-t"><div class="acct-n">${esc(name)}</div><div class="acct-s">${sub}</div>${extra}</div><div class="acct-v">${money(amt)}</div></div>`;
+  const sys = (ini, color) => `<span class="badge" style="background:${color}">${ini}</span>`;
+  const editA = ui.editAssets, editD = ui.editDebts;
+  const totalCash = C.cash, monthly = (F.loans || []).reduce((a, r) => a + (+r.payment || 0), 0);
+  const avail = (F.credits || []).reduce((a, r) => a + Math.max(0, (+r.limit || 0) - (+r.used || 0)), 0);
+  const parts = [['Bancos', C.cash, '#2a78d6'], ['Inventario', C.inv, '#c2410c'], ['Devoluciones', C.claim, '#1baf7a'], ['Walmart', C.pend, '#eda100'], ['Otros', C.other, '#6250d6']].filter((x) => x[1] > 0);
+  const aTot = parts.reduce((a, x) => a + x[1], 0) || 1, dTot = C.debt || 1;
   return `
   <section class="section" style="margin-top:0">
-    <div class="cap-hero">
-      <div><div class="label" style="color:var(--accent)">Capital real</div><div class="big" style="color:${C.capital >= 0 ? 'var(--fg)' : 'var(--bad)'}">${money(C.capital)}</div></div>
-      <div class="eq"><b>Lo que tienes menos lo que debes.</b> ${money(C.assets)} en activos − ${money(C.debt)} en deudas. El inventario se cuenta al costo. Si lo cuentas a valor neto de venta, el capital sería <b class="num">${money(C.capitalNet)}</b>.</div>
+    <div class="equation">
+      <div class="eq-box"><span class="eq-l">Lo que tienes</span><span class="eq-v" style="color:var(--ok)">${money(C.assets)}</span></div>
+      <span class="eq-op">−</span>
+      <div class="eq-box"><span class="eq-l">Lo que debes</span><span class="eq-v" style="color:var(--bad)">${money(C.debt)}</span></div>
+      <span class="eq-op">=</span>
+      <div class="eq-box main"><span class="eq-l">Capital real de la empresa</span><span class="eq-v big">${money(C.capital)}</span><span class="eq-n">Con el inventario a precio de venta: ${money(C.capitalNet)}</span></div>
     </div>
     <div class="ledger">
-      <div class="ledger-col"><header><span>Lo que tienes</span><span class="num">${money(C.assets)}</span></header>
-        <div class="lgroup"><div class="gh"><span>Dinero en bancos</span><b>${money(C.cash)}</b></div>
-          ${(F.cash || []).map((r) => `<div class="lrow">${fi('cash', r, 'name', 'Cuenta (ej. Chase)', 'text', 'nm')}${fi('cash', r, 'amount', '0.00')}${del('cash', r)}</div>`).join('')}${add('cash', 'Agregar cuenta')}</div>
+      <div class="ledger-col">
+        <header><div><div class="lt">Lo que tienes</div><div class="lv" style="color:var(--ok)">${money(C.assets)}</div></div>${Store.canWrite ? `<button class="btn small" data-edit="assets">${editA ? 'Listo' : 'Editar'}</button>` : ''}</header>
+        <div class="lbar">${parts.map(([l, v, c]) => `<span title="${l}: ${money(v)}" style="width:${(v / aTot * 100).toFixed(2)}%;background:${c}"></span>`).join('')}</div>
+        <div class="llegend">${parts.map(([l, v, c]) => `<span><i class="dot" style="background:${c}"></i>${l} <b>${Math.round(v / aTot * 100)}%</b></span>`).join('')}</div>
+        <div class="lgroup"><div class="gh"><span>Bancos y efectivo</span><b>${money(totalCash)}</b></div>
+          ${editA ? (F.cash || []).map((r) => `<div class="lrow">${badge(r)}${fi('cash', r, 'name', 'Banco o cuenta', 'text', 'nm')}${fi('cash', r, 'amount', '0.00')}${logoBtn('cash', r)}${del('cash', r)}</div>`).join('') + add('cash', 'Agregar cuenta')
+            : (F.cash || []).map((r) => acct(badge(r), r.name || 'Cuenta sin nombre', 'Cuenta de banco', +r.amount || 0)).join('') || `<div class="acct-empty">Toca Editar para agregar tus cuentas de banco.</div>`}</div>
         <div class="lgroup"><div class="gh"><span>Inventario</span><b>${money(C.inv)}</b></div>
-          ${autoRow('Inventario al costo', C.inv, 'En WFS, camino a WFS, tu warehouse y devoluciones que ya tienes en casa')}</div>
+          ${acct(sys('INV', '#c2410c'), 'Inventario al costo', 'En WFS, camino a WFS, tu warehouse y devoluciones en casa', C.inv)}</div>
         <div class="lgroup"><div class="gh"><span>Devoluciones por recuperar</span><b>${money(C.claim)}</b></div>
-          <div class="sku" style="font-family:var(--font-body)">Lo que Walmart le reembolsó al cliente. O te llega el producto o Walmart te lo tiene que pagar.</div>
-          ${autoRow('En camino a Walmart', C.ret.camino, 'El cliente todavía no la entrega')}
-          ${autoRow('Por llegarte', C.ret.llegar, 'Walmart dice que te la mandó')}
-          ${autoRow('Por reclamar', C.ret.reclamar, 'Nunca llegaron o no te llegaron')}</div>
+          ${acct(sys('→', '#0f766e'), 'En camino a Walmart', 'El cliente todavía no la entrega', C.ret.camino)}
+          ${acct(sys('↩', '#a8670f'), 'Por llegarte', 'Walmart dice que te la mandó', C.ret.llegar)}
+          ${acct(sys('!', '#c0392b'), 'Por reclamar', 'Nunca llegó o no te llegó', C.ret.reclamar)}</div>
         <div class="lgroup"><div class="gh"><span>Walmart</span><b>${money(C.pend)}</b></div>
-          <div class="lrow"><span class="auto">Pago pendiente de Walmart<div class="sku" style="font-family:var(--font-body)">Lo que Walmart te va a depositar en el próximo pago</div></span><input id="fin-walmartPending" data-finfield="walmartPending" type="number" step="0.01" min="0" value="${esc(F.walmartPending || '')}" placeholder="0.00" ${dis}></div></div>
+          ${editA ? `<div class="lrow">${sys('W', '#0071dc')}<span class="auto">Próximo depósito de Walmart</span><input id="fin-walmartPending" data-finfield="walmartPending" type="number" step="0.01" min="0" value="${esc(F.walmartPending || '')}" placeholder="0.00" ${dis}></div>`
+            : acct(sys('W', '#0071dc'), 'Próximo depósito de Walmart', 'Lo que Walmart te va a pagar en el siguiente ciclo', C.pend)}</div>
         <div class="lgroup"><div class="gh"><span>Otros activos</span><b>${money(C.other)}</b></div>
-          ${(F.assets || []).map((r) => `<div class="lrow">${fi('assets', r, 'name', 'Ej. equipo, vehículo, depósito', 'text', 'nm')}${fi('assets', r, 'amount', '0.00')}${del('assets', r)}</div>`).join('')}${add('assets', 'Agregar activo')}</div>
+          ${editA ? (F.assets || []).map((r) => `<div class="lrow">${badge(r, '#6250d6')}${fi('assets', r, 'name', 'Ej. equipo, vehículo, depósito', 'text', 'nm')}${fi('assets', r, 'amount', '0.00')}${del('assets', r)}</div>`).join('') + add('assets', 'Agregar activo')
+            : (F.assets || []).map((r) => acct(badge(r, '#6250d6'), r.name || 'Activo', 'Otro activo', +r.amount || 0)).join('') || `<div class="acct-empty">Equipo, vehículos o depósitos. Toca Editar para agregar.</div>`}</div>
       </div>
-      <div class="ledger-col"><header><span>Lo que debes</span><span class="num" style="color:var(--bad)">${money(C.debt)}</span></header>
-        <div class="lgroup"><div class="gh"><span>Préstamos${monthly ? ` · pagas ${money(monthly)} al mes` : ''}</span><b>${money(C.loans)}</b></div>
-          ${(F.loans || []).map((r) => {
-            const orig = +r.original || 0, bal = +r.balance || 0, pay = +r.payment || 0, paid = orig ? Math.max(0, Math.min(1, (orig - bal) / orig)) : 0;
-            const months = pay ? Math.ceil(bal / pay) : null;
-            return `<div class="lrow" style="padding-bottom:6px;border-bottom:0.5px dashed var(--line)">${fi('loans', r, 'name', 'Con quién (ej. Kabbage)', 'text', 'nm')}${del('loans', r)}
-              <label class="sku">Monto original ${fi('loans', r, 'original', '0.00')}</label><label class="sku">Debes hoy ${fi('loans', r, 'balance', '0.00')}</label>
-              <label class="sku">Pago mensual ${fi('loans', r, 'payment', '0.00')}</label><label class="sku">Tasa % ${fi('loans', r, 'rate', '0')}</label>
-              ${orig ? `<div class="meter"><span style="width:${(paid * 100).toFixed(1)}%;background:var(--ok)"></span></div>` : ''}
-              <div class="loan-meta">${orig ? `Pagado ${Math.round(paid * 100)}% (${money(orig - bal, 0)} de ${money(orig, 0)})` : 'Escribe el monto original para ver cuánto llevas pagado'}${months ? ` · te faltan unos ${months} pagos` : ''}</div></div>`;
-          }).join('')}${add('loans', 'Agregar préstamo')}</div>
-        <div class="lgroup"><div class="gh"><span>Tarjetas y líneas de crédito</span><b>${money(C.credit)}</b></div>
-          ${(F.credits || []).map((r) => {
-            const lim = +r.limit || 0, used = +r.used || 0, u = lim ? used / lim : 0;
-            return `<div class="lrow" style="padding-bottom:6px;border-bottom:0.5px dashed var(--line)">${fi('credits', r, 'name', 'Tarjeta o línea', 'text', 'nm')}${del('credits', r)}
-              <label class="sku">Límite ${fi('credits', r, 'limit', '0.00')}</label><label class="sku">Usado ${fi('credits', r, 'used', '0.00')}</label>
-              ${lim ? `<div class="meter"><span style="width:${Math.min(100, u * 100).toFixed(1)}%;background:${u > 0.7 ? 'var(--bad)' : u > 0.3 ? 'var(--warn)' : 'var(--ok)'}"></span></div><div class="loan-meta">Usando ${Math.round(u * 100)}% · disponible ${money(lim - used, 0)}</div>` : ''}</div>`;
-          }).join('')}${add('credits', 'Agregar tarjeta o línea')}</div>
+
+      <div class="ledger-col">
+        <header><div><div class="lt">Lo que debes</div><div class="lv" style="color:var(--bad)">${money(C.debt)}</div></div>${Store.canWrite ? `<button class="btn small" data-edit="debts">${editD ? 'Listo' : 'Editar'}</button>` : ''}</header>
+        <div class="debt-kpis">
+          <div><span>Préstamos</span><b>${money(C.loans, 0)}</b></div><div><span>Tarjetas</span><b>${money(C.credit, 0)}</b></div>
+          <div><span>Pagas al mes</span><b>${money(monthly, 0)}</b></div><div><span>Crédito disponible</span><b>${money(avail, 0)}</b></div>
+        </div>
+        ${D.some((d) => d.amount > 0) ? `<div class="lbar tall">${D.filter((d) => d.amount > 0).map((d) => `<span title="${esc(d.name)}: ${money(d.amount)}" style="width:${(d.amount / dTot * 100).toFixed(2)}%;background:${d.color}"></span>`).join('')}</div>` : ''}
+        ${editD ? `
+          <div class="lgroup"><div class="gh"><span>Préstamos</span><b>${money(C.loans)}</b></div>
+          ${(F.loans || []).map((r) => `<div class="lrow edit-card">${badge(r)}${fi('loans', r, 'name', 'Con quién (ej. Parafin)', 'text', 'nm')}${logoBtn('loans', r)}${del('loans', r)}
+            <label>Monto original ${fi('loans', r, 'original', '0.00')}</label><label>Debes hoy ${fi('loans', r, 'balance', '0.00')}</label>
+            <label>Pago mensual ${fi('loans', r, 'payment', '0.00')}</label><label>Tasa % ${fi('loans', r, 'rate', '0')}</label></div>`).join('')}${add('loans', 'Agregar préstamo')}</div>
+          <div class="lgroup"><div class="gh"><span>Tarjetas y líneas de crédito</span><b>${money(C.credit)}</b></div>
+          ${(F.credits || []).map((r) => `<div class="lrow edit-card">${badge(r)}${fi('credits', r, 'name', 'Tarjeta o línea', 'text', 'nm')}${logoBtn('credits', r)}${del('credits', r)}
+            <label>Límite ${fi('credits', r, 'limit', '0.00')}</label><label>Usado (lo que debes) ${fi('credits', r, 'used', '0.00')}</label></div>`).join('')}${add('credits', 'Agregar tarjeta o línea')}</div>`
+        : `<div class="lgroup">${D.map((d) => `<div class="acct debt">${badge(d)}<div class="acct-t"><div class="acct-n"><i class="dot" style="background:${d.color};border-radius:50%"></i>${esc(d.name || 'Sin nombre')} <span class="tag">${d.kind}</span></div>
+            <div class="acct-s">${d.sub}</div>${d.meter != null ? `<div class="meter"><span style="width:${(d.meter * 100).toFixed(1)}%;background:${d.meterColor}"></span></div>` : ''}</div>
+            <div class="acct-v">${money(d.amount)}<div class="acct-p">${C.debt ? Math.round(d.amount / C.debt * 100) : 0}% del total</div></div></div>`).join('') || `<div class="acct-empty">Toca Editar para agregar préstamos y tarjetas.</div>`}</div>
+          ${(F.credits || []).some((r) => r.used == null || r.used === '') ? `<div class="acct-note">Algunas tarjetas no tienen el saldo usado. Toca Editar y escribe cuánto debes en cada una.</div>` : ''}`}
       </div>
     </div>
   </section>
   ${vGrowth(C)}`;
+}
+
+async function uploadLogo(list, id, file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 160 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const F = JSON.parse(JSON.stringify(Store.fin)), row = (F[list] || []).find((r) => r.id === id); if (!row) return;
+    if (Store.mode === 'local') row.logoImg = c.toDataURL('image/png');
+    else {
+      const assets = await window.claude.use('assets'); if (!assets) return showToast('Aquí no se pueden subir imágenes.');
+      const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+      row.logo = (await assets.upload(blob, { type: 'image/png' })).id;
+    }
+    await Store.saveFin(F); showToast('Logo guardado');
+  } catch (e) { showToast('No se pudo subir el logo (' + (e.code || e.message || e) + ').'); }
 }
 
 const SER = { capital: ['Capital', '#00a08a'], inv: ['Inventario', '#c2410c'] };
@@ -1543,7 +1640,7 @@ function openReturn(k) {
 
 // Eventos
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],[data-invall],[data-finadd],[data-findel],[data-histdel],#snap,#hist-add,#add-prod,#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
+  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],[data-edit],[data-invall],[data-finadd],[data-findel],[data-histdel],#snap,#hist-add,#add-prod,#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
   if (!t) return;
   if (t.dataset.close !== undefined) return $('#dlg').close();
   if (t.dataset.tab) return go(t.dataset.tab);
@@ -1565,6 +1662,7 @@ document.addEventListener('click', async (e) => {
     try { await Store.saveMarks(entries); showToast(st ? `${entries.length} productos marcados` : 'Caja sin marcar'); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
     return;
   }
+  if (t.dataset.edit) { const k = t.dataset.edit === 'assets' ? 'editAssets' : 'editDebts'; ui[k] = !ui[k]; return render(); }
   if (t.dataset.invall) { ui.invAll = t.dataset.invall === '1'; return render(); }
   if (t.dataset.finadd) {
     const F = JSON.parse(JSON.stringify(Store.fin)); (F[t.dataset.finadd] = F[t.dataset.finadd] || []).push({ id: 'r' + Date.now() });
@@ -1631,6 +1729,7 @@ document.addEventListener('change', async (e) => {
     try { await Store.saveFin(F); autoSnap(); } catch (err) { showToast('No se pudo guardar.'); }
     return;
   }
+  if (t.dataset.logo && t.files[0]) { await uploadLogo(t.dataset.logo, t.dataset.id, t.files[0]); return; }
   if (t.id === 'photo-in' && t.files[0]) await uploadPhoto(t.dataset.gtin, t.files[0]);
   if (t.dataset.cl) { t.checked ? ui.claimSel.add(t.dataset.cl) : ui.claimSel.delete(t.dataset.cl); updateClaimText(); }
   if (t.id === 'file') handleFiles([...t.files]);
