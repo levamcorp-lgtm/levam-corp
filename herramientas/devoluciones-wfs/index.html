@@ -311,6 +311,10 @@ dialog::backdrop { background: rgba(10, 14, 20, 0.45); }
 .edit-card { padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
 @media (max-width: 900px) { .equation { grid-template-columns: minmax(0, 1fr); } .eq-op { display: none; } .debt-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
+.pj td { font-size: 13px; color: var(--fg); }
+.pj .pj-note { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.pj tr.pj-total td { font-weight: 700; background: var(--accent-dim); }
+
 /* ===== Look comercial ===== */
 body { font-variant-numeric: tabular-nums; background: var(--bg); }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
@@ -1333,68 +1337,120 @@ async function uploadLogo(list, id, file) {
 const SER = { capital: ['Capital', '#00a08a'], inv: ['Inventario', '#c2410c'] };
 function monthEnd(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); }
 function monthLabel(ym) { const [y, m] = ym.split('-').map(Number); return ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][m - 1] + ' ' + y; }
+// Proyección conservadora: sale de tus ventas reales (cargos de envío WFS en el settlement), tus devoluciones y tus costos
+function projection(C, rows) {
+  const P = { haircut: 15, lossPct: 40, pendCut: 15, buyPct: 100, ...(Store.fin.proj || {}) };
+  const span = (ds) => { const a = ds.filter(Boolean).sort(); return a.length ? Math.max(1, (Date.parse(a[a.length - 1]) - Date.parse(a[0])) / 864e5 / 30.44) : 1; };
+  const S = M.settle, ff = S.filter((x) => x.type === 'FulfillmentFee' && x.gtin);
+  const sMonths = span(S.map((x) => x.date)), rMonths = span(M.returns.map((x) => x.date));
+  const byG = new Map(rows.filter((r) => !r.manual).map((r) => [r.id, r]));
+  const sold = new Map(), ret = new Map();
+  for (const x of ff) sold.set(x.gtin, (sold.get(x.gtin) || 0) + (x.qty || 1));
+  for (const r of M.returns) if (r.fault !== 'WFS') { const a = ret.get(r.gtin) || { n: 0, fee: 0 }; a.n += r.qty || 1; a.fee += r.fee || 0; ret.set(r.gtin, a); }
+  let units = 0, unitsRet = 0, gross = 0, retCost = 0, cogs = 0, missingUnits = 0; const missing = [], lines = [];
+  const gtins = new Set([...sold.keys(), ...ret.keys()]);
+  for (const g of gtins) {
+    const r = byG.get(g); const u = (sold.get(g) || 0) / sMonths * (1 - P.haircut / 100); const rr = ret.get(g) || { n: 0, fee: 0 };
+    const ur = rr.n / rMonths, feeR = rr.n ? rr.fee / rr.n : 0;
+    if (!r || !r.cost) { if (u > 0) { missingUnits += u; missing.push(r ? r.name : g); } continue; }
+    const kept = Math.max(0, u - ur);
+    const g1 = kept * (r.net - r.cost), rc = ur * (feeR + r.fee + r.cost * P.lossPct / 100);
+    units += u; unitsRet += ur; gross += g1; retCost += rc; cogs += kept * r.cost;
+    lines.push({ name: r.name, u, ur, gross: g1, retCost: rc });
+  }
+  const other = S.filter((x) => ['StorageFee', 'InboundTransportationFee', 'RC_InventoryRTVFee'].includes(x.type)).reduce((a, x) => a + x.net, 0) / sMonths;
+  const interest = (Store.fin.loans || []).reduce((a, l) => a + (+l.balance || 0) * (+l.rate || 0) / 100 / 12, 0);
+  const net = gross - retCost - other - interest;
+  const pendCut = C.claim * P.pendCut / 100;
+  // Tendencia de tu historial (si hay al menos 30 días de registros)
+  const H = [...Store.hist].filter((h) => h.date).sort((a, b) => a.date.localeCompare(b.date));
+  let trend = null;
+  if (H.length >= 2) { const d = (Date.parse(H[H.length - 1].date) - Date.parse(H[0].date)) / 864e5; if (d >= 30) trend = (H[H.length - 1].capital - H[0].capital) / (d / 30.44); }
+  const monthly = trend != null ? Math.min(net, trend) : net;
+  const start = new Date(today() + 'T12:00:00'), months = [];
+  for (let k = 1; k <= 3; k++) {
+    const e = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + k + 1, 0)); const end = e.toISOString().slice(0, 10);
+    const m = (Date.parse(end) - Date.parse(today())) / 864e5 / 30.44;
+    months.push({ end, ym: end.slice(0, 7), m, capital: C.capital - pendCut + monthly * m, inv: Math.max(0, C.inv + (cogs * P.buyPct / 100 - cogs) * m) });
+  }
+  return { P, sMonths, rMonths, units, unitsRet, gross, retCost, other, interest, net, trend, monthly, pendCut, months, missing, missingUnits, cogs, lines, hasSales: ff.length > 0 };
+}
+
 function vGrowth(C) {
-  const plan = { month: '2026-12', profit: 0, buy: 0, sell: 0, ...(Store.fin.plan || {}) };
-  const now = today();
-  if (monthEnd(plan.month) <= now) { const d = new Date(); d.setUTCMonth(d.getUTCMonth() + 2); plan.month = d.toISOString().slice(0, 7); }
-  const end = monthEnd(plan.month), months = (Date.parse(end) - Date.parse(now)) / 864e5 / 30.44;
-  const proj = { capital: C.capital + (+plan.profit || 0) * months, inv: Math.max(0, C.inv + ((+plan.buy || 0) - (+plan.sell || 0)) * months) };
+  const rows = invRows(), J = projection(C, rows), now = today(), dis = Store.canWrite ? '' : 'disabled';
+  const last = J.months[J.months.length - 1], end = last.end;
   const H = [...Store.hist].filter((h) => h.date && h.date < now).sort((a, b) => a.date.localeCompare(b.date));
   const pts = [...H, { date: now, capital: C.capital, inv: C.inv, live: true }];
-  const dis = Store.canWrite ? '' : 'disabled';
-  const opts = []; { const d = new Date(); for (let k = 1; k <= 18; k++) { const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + k, 1)); opts.push(x.toISOString().slice(0, 7)); } }
-  const pin = (k, ph) => `<input id="fin-plan-${k}" data-plan="${k}" type="number" step="0.01" value="${esc(plan[k] || '')}" placeholder="${ph}" ${dis}>`;
+  const pin = (k, ph, suf) => `<label>${ph} <input id="fin-proj-${k}" data-proj="${k}" type="number" step="1" min="0" max="100" value="${esc(J.P[k])}" style="width:64px" ${dis}> ${suf}</label>`;
   const delta = (a, b) => { const d = b - a; return `<span style="color:${d >= 0 ? 'var(--ok)' : 'var(--bad)'}">${d >= 0 ? '+' : '−'}${money(Math.abs(d), 0).replace('−', '')}</span>`; };
+  const mname = (ym) => monthLabel(ym).split(' ')[0];
 
-  // Gráfica: historia (línea sólida) + proyección hasta el mes elegido (línea punteada)
+  // Gráfica
   const W = 860, Ht = 280, pl = 70, pr = 110, pt = 18, pb = 30;
   const t0 = Date.parse(pts[0].date), t1 = Date.parse(end);
-  const all = [...pts.map((p) => p.capital), ...pts.filter((p) => p.inv != null).map((p) => p.inv), proj.capital, proj.inv];
+  const proj = J.months;
+  const all = [...pts.map((p) => p.capital), ...pts.filter((p) => p.inv != null).map((p) => p.inv), ...proj.map((p) => p.capital), ...proj.map((p) => p.inv)];
   const lo0 = Math.min(0, ...all), hi0 = Math.max(...all, 1);
   const step = niceStep((hi0 - lo0) / 4 || 1), lo = Math.floor(lo0 / step) * step, hi = Math.ceil(hi0 / step) * step;
   const x = (d) => pl + (Date.parse(d) - t0) / ((t1 - t0) || 1) * (W - pl - pr), y = (v) => pt + (hi - v) / ((hi - lo) || 1) * (Ht - pt - pb);
   const ticks = []; for (let v = lo; v <= hi + 1e-6; v += step) ticks.push(v);
   const path = (arr, k) => arr.filter((p) => p[k] != null).map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p[k]).toFixed(1)}`).join('');
+  const projPts = (k) => [{ date: now, [k]: k === 'capital' ? C.capital : C.inv }, ...proj.map((p) => ({ date: p.end, [k]: p[k] }))];
   const xt = []; { const a = new Date(t0), b = new Date(t1); for (let d = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + 1, 1)); d <= b; d.setUTCMonth(d.getUTCMonth() + 1)) xt.push(d.toISOString().slice(0, 10)); }
   const every = Math.ceil(xt.length / 7);
-  const lab = (k, v, yy) => `<text x="${W - pr + 10}" y="${yy + 4}" font-size="12" font-weight="600" fill="var(--fg)">${SER[k][0]}</text><text x="${W - pr + 10}" y="${yy + 19}" font-size="12" fill="var(--muted)">${money(v, 0)}</text>`;
-  let ly = { capital: y(proj.capital), inv: y(proj.inv) };
+  const lab = (k, v, yy) => `<text x="${W - pr + 10}" y="${yy + 4}" font-size="12" font-weight="600" fill="var(--fg)">${SER[k][0]}</text><text x="${W - pr + 10}" y="${yy + 19}" font-size="12" fill="var(--fg)">${money(v, 0)}</text>`;
+  const ly = { capital: y(last.capital), inv: y(last.inv) };
   if (Math.abs(ly.capital - ly.inv) < 34) { const m = (ly.capital + ly.inv) / 2, up = ly.capital < ly.inv ? 'capital' : 'inv'; ly[up] = m - 17; ly[up === 'capital' ? 'inv' : 'capital'] = m + 17; }
-  ui.chart = { pts: [...pts, { date: end, capital: proj.capital, inv: proj.inv, proj: true }], x, y, W };
-  const svg = `<svg viewBox="0 0 ${W} ${Ht}" role="img" aria-label="Capital e inventario en el tiempo, con proyección a ${monthLabel(plan.month)}">
-    ${ticks.map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pl - 10}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${money(v, 0)}</text>`).join('')}
-    ${xt.filter((d, i) => i % every === 0).map((d) => `<text x="${x(d)}" y="${Ht - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+d.slice(5, 7) - 1]}</text>`).join('')}
+  ui.chart = { pts: [...pts, ...proj.map((p) => ({ date: p.end, capital: p.capital, inv: p.inv, proj: true }))], x, y, W };
+  const svg = `<svg viewBox="0 0 ${W} ${Ht}" role="img" aria-label="Capital e inventario, historia y proyección conservadora a 3 meses">
+    ${ticks.map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pl - 10}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--fg)">${money(v, 0)}</text>`).join('')}
+    ${xt.filter((d, i) => i % every === 0).map((d) => `<text x="${x(d)}" y="${Ht - 8}" text-anchor="middle" font-size="11" fill="var(--fg)">${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+d.slice(5, 7) - 1]}</text>`).join('')}
     <rect x="${x(now)}" y="${pt}" width="${Math.max(0, W - pr - x(now))}" height="${Ht - pt - pb}" fill="var(--bg-soft)"/>
-    <line x1="${x(now)}" x2="${x(now)}" y1="${pt}" y2="${Ht - pb}" stroke="var(--muted)" stroke-width="1"/>
-    <text x="${x(now) + 6}" y="${pt + 12}" font-size="11" fill="var(--muted)">Hoy · proyección →</text>
+    <line x1="${x(now)}" x2="${x(now)}" y1="${pt}" y2="${Ht - pb}" stroke="var(--fg)" stroke-width="1"/>
+    <text x="${x(now) + 6}" y="${pt + 12}" font-size="11" fill="var(--fg)">Hoy · proyección conservadora →</text>
     ${['inv', 'capital'].map((k) => `
       <path d="${path(pts, k)}" fill="none" stroke="${SER[k][1]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="M${x(now)},${y(k === 'capital' ? C.capital : C.inv)}L${x(end)},${y(proj[k])}" fill="none" stroke="${SER[k][1]}" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>
+      <path d="${path(projPts(k), k)}" fill="none" stroke="${SER[k][1]}" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>
       ${pts.filter((p) => p[k] != null).map((p) => `<circle cx="${x(p.date)}" cy="${y(p[k])}" r="${p.live ? 5 : 3.5}" fill="${SER[k][1]}" stroke="var(--bg)" stroke-width="2"/>`).join('')}
-      <circle cx="${x(end)}" cy="${y(proj[k])}" r="5" fill="var(--bg)" stroke="${SER[k][1]}" stroke-width="2"/>
-      ${lab(k, proj[k], ly[k])}`).join('')}
+      ${proj.map((p) => `<circle cx="${x(p.end)}" cy="${y(p[k])}" r="4.5" fill="var(--bg)" stroke="${SER[k][1]}" stroke-width="2"/>`).join('')}
+      ${lab(k, last[k], ly[k])}`).join('')}
     <line id="cx" x1="0" x2="0" y1="${pt}" y2="${Ht - pb}" stroke="var(--fg)" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
     <rect id="chit" x="${pl}" y="${pt}" width="${W - pl - pr}" height="${Ht - pt - pb}" fill="transparent"/>
   </svg>`;
 
+  const rowL = (l, v, note, strong) => `<tr${strong ? ' class="pj-total"' : ''}><td>${l}${note ? `<div class="pj-note">${note}</div>` : ''}</td>${J.months.map(() => `<td class="r num">${v == null ? '' : money(v, 0)}</td>`).join('')}</tr>`;
+  const table = `<div class="table-wrap"><table class="pj"><thead><tr><th>Cada mes (estimado conservador)</th>${J.months.map((m) => `<th class="r">${mname(m.ym)}</th>`).join('')}</tr></thead><tbody>
+    <tr><td>Unidades que vendes al mes<div class="pj-note">Promedio de tus cargos de envío WFS, con ${J.P.haircut}% menos por seguridad</div></td>${J.months.map(() => `<td class="r num">${Math.round(J.units)}</td>`).join('')}</tr>
+    <tr><td>Unidades devueltas al mes<div class="pj-note">Promedio de tus devoluciones (culpa tuya)</div></td>${J.months.map(() => `<td class="r num">${Math.round(J.unitsRet)}</td>`).join('')}</tr>
+    ${rowL('Ganancia de lo vendido', J.gross, 'Unidades que se quedan vendidas × (neto − costo)')}
+    ${rowL('− Costo de devoluciones', -J.retCost, `Cargos de devolución + envío WFS perdido + ${J.P.lossPct}% del costo por producto no vendible`)}
+    ${rowL('− Otros cargos de WFS', -J.other, 'Almacenaje, transporte a WFS y envío de devoluciones (promedio del settlement)')}
+    ${rowL('− Intereses de préstamos', -J.interest, J.interest ? '' : 'Pon la tasa de cada préstamo para contarlos')}
+    ${rowL('= Ganancia neta del mes', J.net, '', true)}
+    ${J.trend != null ? rowL('Según tu historial', J.trend, 'Cuánto subió tu capital por mes en tus registros. Se usa el menor de los dos.') : ''}
+    <tr class="pj-total"><td>Capital al cierre del mes<div class="pj-note">Incluye −${money(J.pendCut, 0)} por si ${J.P.pendCut}% de las devoluciones pendientes nunca se recupera</div></td>${J.months.map((m) => `<td class="r num">${money(m.capital, 0)}</td>`).join('')}</tr>
+  </tbody></table></div>`;
+
   const tbl = H.length ? `<details><summary class="label" style="cursor:pointer">Ver registros guardados (${H.length})</summary><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Fecha</th><th class="r">Capital</th><th class="r">Inventario</th><th class="r">Bancos</th><th class="r">Deudas</th><th></th></tr></thead>
     <tbody>${[...H].reverse().map((h) => `<tr><td class="num">${fmtDate(h.date)}</td><td class="r num">${money(h.capital)}</td><td class="r num">${h.inv != null ? money(h.inv, 0) : '—'}</td><td class="r num">${h.cash != null ? money(h.cash, 0) : '—'}</td><td class="r num">${h.debt != null ? money(h.debt, 0) : '—'}</td><td class="r">${Store.canWrite ? `<button class="x" data-histdel="${esc(h.id)}" aria-label="Borrar registro" style="border:0;background:none;color:var(--muted)">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>` : '';
   return `<section class="section" style="margin-top:32px">
-    <div class="section-head"><h2>Cómo va creciendo la empresa</h2><span class="muted" style="font-size:12px">Línea sólida: lo que ya pasó · punteada: proyección</span></div>
+    <div class="section-head"><h2>Proyección conservadora: próximos 3 meses</h2><span style="font-size:13px">Sale de tus ventas, devoluciones y costos reales</span></div>
     <div class="buckets">
-      <div class="bucket"><span class="head">Inventario hoy</span><span class="amt">${money(C.inv, 0)}</span><span class="sub">al costo</span></div>
-      <div class="bucket"><span class="head">Inventario en ${monthLabel(plan.month)}</span><span class="amt">${money(proj.inv, 0)}</span><span class="sub">${delta(C.inv, proj.inv)} vs hoy</span></div>
-      <div class="bucket"><span class="head">Capital en ${monthLabel(plan.month)}</span><span class="amt">${money(proj.capital, 0)}</span><span class="sub">${delta(C.capital, proj.capital)} vs hoy (${money(C.capital, 0)})</span></div>
+      <div class="bucket"><span class="head">Capital hoy</span><span class="amt">${money(C.capital, 0)}</span><span class="sub">Inventario ${money(C.inv, 0)} al costo</span></div>
+      <div class="bucket"><span class="head">Ganancia neta estimada al mes</span><span class="amt" style="color:${J.monthly >= 0 ? 'var(--ok)' : 'var(--bad)'}">${money(J.monthly, 0)}</span><span class="sub">Después de devoluciones, fees e intereses</span></div>
+      <div class="bucket"><span class="head">Capital a fin de ${monthLabel(last.ym)}</span><span class="amt">${money(last.capital, 0)}</span><span class="sub">${delta(C.capital, last.capital)} vs hoy</span></div>
     </div>
+    ${J.missing.length ? `<div class="findings"><div class="finding"><span class="stripe" style="background:var(--warn)"></span><div><h3>${J.missing.length} productos que vendes no tienen costo</h3><p>Vendes unas ${Math.round(J.missingUnits)} unidades al mes de ${J.missing.slice(0, 4).map((n) => short(n, 30)).join(', ')}${J.missing.length > 4 ? '…' : ''}, pero sin el costo no se pueden contar. La proyección sale más baja de lo real hasta que pongas el costo en Inventario.</p><div class="act"><button class="btn small" data-go="inventario">Poner costos</button></div></div></div></div>` : ''}
+    ${!J.hasSales ? `<div class="findings"><div class="finding"><span class="stripe" style="background:var(--warn)"></span><div><h3>Faltan datos de ventas</h3><p>Las ventas se estiman con los cargos de envío del settlement de WFS. Carga el settlement en Cargar reportes.</p></div></div></div>` : ''}
+    ${table}
     <div class="ledger-col" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
-      <div class="lrow"><label>Proyectar hasta <select id="fin-plan-month" data-plan="month" ${dis} style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)">${opts.map((o) => `<option value="${o}" ${o === plan.month ? 'selected' : ''}>${monthLabel(o)}</option>`).join('')}</select></label>
-        <label>Ganancia neta al mes ${pin('profit', '0.00')}</label><label>Compras de inventario al mes ${pin('buy', '0.00')}</label><label>Inventario que vendes al mes (al costo) ${pin('sell', '0.00')}</label></div>
-      <div class="sku" style="font-family:var(--font-body)">Capital proyectado = capital de hoy + ganancia neta × meses. Inventario proyectado = inventario de hoy + (compras − lo que vendes) × meses. Faltan ${months.toFixed(1)} meses para el cierre de ${monthLabel(plan.month)}.</div>
+      <div class="lt">Qué tan conservadora es</div>
+      <div class="lrow">${pin('haircut', 'Vender', '% menos de lo normal')}${pin('lossPct', 'Perder', '% del costo en cada devolución')}${pin('pendCut', 'No recuperar', '% de devoluciones pendientes')}${pin('buyPct', 'Reponer', '% de lo que vendes')}</div>
+      <div class="pj-note">Ventas: ${J.sMonths.toFixed(1)} meses de settlement. Devoluciones: ${J.rMonths.toFixed(1)} meses. Con más reportes (settlement y pagos) la proyección se vuelve más exacta. "Reponer 100%" quiere decir que compras lo mismo que vendes y el inventario se mantiene.</div>
     </div>
     <div class="chart-wrap" id="capchart">
-      <div class="row" style="gap:16px;font-size:12px;color:var(--muted);margin-bottom:6px">${Object.values(SER).map(([l, c]) => `<span style="display:inline-flex;gap:6px;align-items:center"><i class="dot" style="background:${c};border-radius:50%"></i>${l}</span>`).join('')}</div>
+      <div class="row" style="gap:16px;font-size:12px;margin-bottom:6px">${Object.values(SER).map(([l, c]) => `<span style="display:inline-flex;gap:6px;align-items:center"><i class="dot" style="background:${c};border-radius:50%"></i>${l}</span>`).join('')}<span>Línea sólida: lo que ya pasó · punteada: proyección</span></div>
       ${svg}<div class="chart-tip" id="ctip" hidden></div>
-      ${H.length < 1 ? `<p class="sku" style="font-family:var(--font-body);margin:6px 0 4px">La parte sólida se va llenando sola: cada día que cambias algo de inventario o capital se guarda el valor de ese día. Si sabes cuánto capital tenías antes, agrégalo abajo.</p>` : ''}
     </div>
     ${Store.canWrite ? `<div class="row"><span class="label">Agregar un registro pasado</span><input id="hist-date" type="date" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px"><input id="hist-amt" type="number" step="0.01" placeholder="Capital ese día" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;width:140px"><input id="hist-inv" type="number" step="0.01" placeholder="Inventario ese día" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;width:150px"><button class="btn small" id="hist-add">Agregar</button><button class="btn small primary" id="snap">Guardar el día de hoy</button></div>` : ''}
     ${tbl}
@@ -1737,16 +1793,14 @@ async function exportExcel() {
     body(row, k % 2 === 1, { 1: 'dd mmm yyyy', 2: MONEY, 3: MONEY, 4: MONEY, 5: MONEY, 6: MONEY });
   });
   let hr = 5 + H.length + 1;
-  const plan = { month: '2026-12', profit: 0, buy: 0, sell: 0, ...(Fn.plan || {}) };
-  const months = Math.max(0, (Date.parse(monthEnd(plan.month)) - Date.parse(hoy)) / 864e5 / 30.44);
-  section(wh, hr++, `Proyección a ${monthLabel(plan.month)}`, 6, TEAL);
-  [['Capital hoy', C.capital, MONEY], ['Inventario hoy (al costo)', C.inv, MONEY], ['Ganancia neta al mes', +plan.profit || 0, MONEY], ['Compras de inventario al mes', +plan.buy || 0, MONEY], ['Inventario que vendes al mes (al costo)', +plan.sell || 0, MONEY], ['Meses hasta el cierre', Math.round(months * 10) / 10, '0.0']].forEach(([l, v, f], k) => {
-    wh.mergeCells(hr, 1, hr, 3); const row = wh.getRow(hr); row.getCell(1).value = l; row.getCell(4).value = v; body(row, k % 2 === 1, { 4: f }); hr++;
-  });
-  const p0 = hr - 6;
-  [['Capital proyectado', `D${p0}+D${p0 + 2}*D${p0 + 5}`], ['Inventario proyectado', `MAX(0,D${p0 + 1}+(D${p0 + 3}-D${p0 + 4})*D${p0 + 5})`]].forEach(([l, f]) => {
-    wh.mergeCells(hr, 1, hr, 3); const row = wh.getRow(hr); row.getCell(1).value = l; row.getCell(4).value = F(f); totalRow(row); row.getCell(4).numFmt = MONEY; hr++;
-  });
+  const J = projection(C, invRows());
+  section(wh, hr++, 'Proyección conservadora · próximos 3 meses', 6, TEAL);
+  header(wh, hr++, ['Concepto (al mes)', '', '', ...J.months.map((m) => monthLabel(m.ym))], DARK);
+  const pRows = [['Unidades que vendes', J.units, INT], ['Unidades devueltas', J.unitsRet, INT], ['Ganancia de lo vendido', J.gross, MONEY], ['− Costo de devoluciones', -J.retCost, MONEY], ['− Otros cargos de WFS', -J.other, MONEY], ['− Intereses de préstamos', -J.interest, MONEY], ['= Ganancia neta del mes', J.monthly, MONEY]];
+  pRows.forEach(([l, v, f], k) => { wh.mergeCells(hr, 1, hr, 3); const row = wh.getRow(hr); row.getCell(1).value = l; J.months.forEach((m, q) => { row.getCell(4 + q).value = v; }); body(row, k % 2 === 1, { 4: f, 5: f, 6: f }); if (k === pRows.length - 1) totalRow(row); hr++; });
+  wh.mergeCells(hr, 1, hr, 3); { const row = wh.getRow(hr); row.getCell(1).value = 'Capital al cierre del mes'; J.months.forEach((m, q) => { row.getCell(4 + q).value = m.capital; }); totalRow(row); [4, 5, 6].forEach((c) => { row.getCell(c).numFmt = MONEY; row.getCell(c).fill = fill(TEAL); row.getCell(c).font = { bold: true, color: { argb: 'FFFFFFFF' } }; }); hr += 2; }
+  wh.getCell(`A${hr}`).value = `Supuestos: vender ${J.P.haircut}% menos, perder ${J.P.lossPct}% del costo en cada devolución, no recuperar ${J.P.pendCut}% de las devoluciones pendientes (−${money(J.pendCut, 0)}), reponer ${J.P.buyPct}% de lo vendido.`;
+  wh.getCell(`A${hr}`).font = { italic: true, color: { argb: 'FF3B4554' } };
 
   // ---------- Devoluciones por recuperar ----------
   const wd = wb.addWorksheet('Devoluciones pendientes', { properties: { tabColor: { argb: AMBER } }, views: [{ state: 'frozen', ySplit: 4 }] });
@@ -1898,9 +1952,9 @@ document.addEventListener('change', async (e) => {
     try { await Store.saveFin(F); autoSnap(); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
     return;
   }
-  if (t.dataset.plan) {
-    const F = JSON.parse(JSON.stringify(Store.fin)); F.plan = { month: '2026-12', ...(F.plan || {}) };
-    F.plan[t.dataset.plan] = t.dataset.plan === 'month' ? t.value : (parseFloat(t.value) || 0);
+  if (t.dataset.proj) {
+    const F = JSON.parse(JSON.stringify(Store.fin)); F.proj = { ...(F.proj || {}) };
+    F.proj[t.dataset.proj] = Math.max(0, Math.min(t.dataset.proj === 'buyPct' ? 300 : 100, parseFloat(t.value) || 0));
     try { await Store.saveFin(F); } catch (err) { showToast('No se pudo guardar.'); }
     return;
   }
