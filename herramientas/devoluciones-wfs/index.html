@@ -311,6 +311,14 @@ dialog::backdrop { background: rgba(10, 14, 20, 0.45); }
 .edit-card { padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
 @media (max-width: 900px) { .equation { grid-template-columns: minmax(0, 1fr); } .eq-op { display: none; } .debt-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
+.pj-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pj-in { border: 1px solid rgba(15, 118, 110, 0.3); background: var(--accent-dim); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pj-in label { font-size: 14px; font-weight: 700; color: var(--fg); }
+.pj-in-row { display: flex; align-items: center; gap: 6px; font-size: 22px; font-weight: 700; }
+.pj-in-row input { font: inherit; font-size: 22px; font-weight: 700; width: 100%; max-width: 220px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.pj-in .pj-note { font-size: 12px; color: var(--fg); }
+.pj-mix summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--accent); }
+@media (max-width: 700px) { .pj-inputs { grid-template-columns: minmax(0, 1fr); } }
 .pj td { font-size: 13px; color: var(--fg); }
 .pj .pj-note { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .pj tr.pj-total td { font-weight: 700; background: var(--accent-dim); }
@@ -1339,41 +1347,49 @@ function monthEnd(ym) { const [y, m] = ym.split('-').map(Number); return new Dat
 function monthLabel(ym) { const [y, m] = ym.split('-').map(Number); return ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][m - 1] + ' ' + y; }
 // Proyección conservadora: sale de tus ventas reales (cargos de envío WFS en el settlement), tus devoluciones y tus costos
 function projection(C, rows) {
-  const P = { haircut: 15, lossPct: 40, pendCut: 15, buyPct: 100, ...(Store.fin.proj || {}) };
+  const P = { haircut: 15, lossPct: 40, pendCut: 15, buyPct: 100, sales: null, margin: null, ...(Store.fin.proj || {}) };
   const span = (ds) => { const a = ds.filter(Boolean).sort(); return a.length ? Math.max(1, (Date.parse(a[a.length - 1]) - Date.parse(a[0])) / 864e5 / 30.44) : 1; };
   const S = M.settle, ff = S.filter((x) => x.type === 'FulfillmentFee' && x.gtin);
   const sMonths = span(S.map((x) => x.date)), rMonths = span(M.returns.map((x) => x.date));
   const byG = new Map(rows.filter((r) => !r.manual).map((r) => [r.id, r]));
-  const sold = new Map(), ret = new Map();
-  for (const x of ff) sold.set(x.gtin, (sold.get(x.gtin) || 0) + (x.qty || 1));
-  for (const r of M.returns) if (r.fault !== 'WFS') { const a = ret.get(r.gtin) || { n: 0, fee: 0 }; a.n += r.qty || 1; a.fee += r.fee || 0; ret.set(r.gtin, a); }
-  let units = 0, unitsRet = 0, gross = 0, retCost = 0, cogs = 0, missingUnits = 0; const missing = [], lines = [];
-  const gtins = new Set([...sold.keys(), ...ret.keys()]);
-  for (const g of gtins) {
-    const r = byG.get(g); const u = (sold.get(g) || 0) / sMonths * (1 - P.haircut / 100); const rr = ret.get(g) || { n: 0, fee: 0 };
-    const ur = rr.n / rMonths, feeR = rr.n ? rr.fee / rr.n : 0;
-    if (!r || !r.cost) { if (u > 0) { missingUnits += u; missing.push(r ? r.name : g); } continue; }
-    const kept = Math.max(0, u - ur);
-    const g1 = kept * (r.net - r.cost), rc = ur * (feeR + r.fee + r.cost * P.lossPct / 100);
-    units += u; unitsRet += ur; gross += g1; retCost += rc; cogs += kept * r.cost;
-    lines.push({ name: r.name, u, ur, gross: g1, retCost: rc });
+  // Mezcla de productos: cuántas unidades de cada uno vendes (cargos de envío WFS del settlement) y su margen
+  const sold = new Map(); for (const x of ff) sold.set(x.gtin, (sold.get(x.gtin) || 0) + (x.qty || 1));
+  let autoSales = 0, mNum = 0, mDen = 0, autoUnits = 0; const missing = [], mix = [];
+  for (const [g, n] of sold) {
+    const r = byG.get(g); const u = n / sMonths; autoUnits += u;
+    const price = r ? r.price : 0; autoSales += u * price;
+    const has = r && r.cost && r.price;
+    if (has) { mNum += u * (r.net - r.cost); mDen += u * r.price; } else if (u >= 0.5) missing.push(r ? r.name : g);
+    mix.push({ name: r ? r.name : 'GTIN ' + g, sku: r ? r.sku : '', u, price, net: r ? r.net : 0, cost: r ? r.cost : 0, fee: r ? r.fee : 0, pct: r ? r.pct : 0, margin: has ? (r.net - r.cost) / r.price * 100 : null, sales: u * price });
   }
+  mix.sort((a, b) => b.sales - a.sales);
+  const autoMargin = mDen ? mNum / mDen * 100 : 20;
+  const userSales = P.sales != null && P.sales !== '', userMargin = P.margin != null && P.margin !== '';
+  const sales = userSales ? +P.sales : autoSales;
+  const margin = userMargin ? +P.margin : autoMargin;
+  const salesC = sales * (1 - P.haircut / 100);
+  // Devoluciones (culpa tuya) por mes, de tu reporte de devoluciones
+  const sellerRet = M.returns.filter((r) => r.fault !== 'WFS');
+  const refundsM = sellerRet.reduce((a, r) => a + r.refund, 0) / rMonths;
+  const retCost = sellerRet.reduce((a, r) => { const p = byG.get(r.gtin); const cost = p && p.cost ? p.cost : r.refund * (1 - margin / 100); return a + (r.fee || 0) + (p ? p.fee : 0) + cost * P.lossPct / 100; }, 0) / rMonths;
+  const gross = Math.max(0, salesC - refundsM) * margin / 100;
   const other = S.filter((x) => ['StorageFee', 'InboundTransportationFee', 'RC_InventoryRTVFee'].includes(x.type)).reduce((a, x) => a + x.net, 0) / sMonths;
   const interest = (Store.fin.loans || []).reduce((a, l) => a + (+l.balance || 0) * (+l.rate || 0) / 100 / 12, 0);
   const net = gross - retCost - other - interest;
   const pendCut = C.claim * P.pendCut / 100;
-  // Tendencia de tu historial (si hay al menos 30 días de registros)
   const H = [...Store.hist].filter((h) => h.date).sort((a, b) => a.date.localeCompare(b.date));
   let trend = null;
   if (H.length >= 2) { const d = (Date.parse(H[H.length - 1].date) - Date.parse(H[0].date)) / 864e5; if (d >= 30) trend = (H[H.length - 1].capital - H[0].capital) / (d / 30.44); }
   const monthly = trend != null ? Math.min(net, trend) : net;
+  const cogs = salesC * (1 - margin / 100) * 0.85;
   const start = new Date(today() + 'T12:00:00'), months = [];
   for (let k = 1; k <= 3; k++) {
     const e = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + k + 1, 0)); const end = e.toISOString().slice(0, 10);
     const m = (Date.parse(end) - Date.parse(today())) / 864e5 / 30.44;
     months.push({ end, ym: end.slice(0, 7), m, capital: C.capital - pendCut + monthly * m, inv: Math.max(0, C.inv + (cogs * P.buyPct / 100 - cogs) * m) });
   }
-  return { P, sMonths, rMonths, units, unitsRet, gross, retCost, other, interest, net, trend, monthly, pendCut, months, missing, missingUnits, cogs, lines, hasSales: ff.length > 0 };
+  return { P, sMonths, rMonths, sales, salesC, margin, autoSales, autoMargin, autoUnits, userSales, userMargin, mix, sellerRetN: sellerRet.length,
+    refundsM, gross, retCost, other, interest, net, trend, monthly, pendCut, months, missing, hasSales: ff.length > 0 };
 }
 
 function vGrowth(C) {
@@ -1420,33 +1436,43 @@ function vGrowth(C) {
 
   const rowL = (l, v, note, strong) => `<tr${strong ? ' class="pj-total"' : ''}><td>${l}${note ? `<div class="pj-note">${note}</div>` : ''}</td>${J.months.map(() => `<td class="r num">${v == null ? '' : money(v, 0)}</td>`).join('')}</tr>`;
   const table = `<div class="table-wrap"><table class="pj"><thead><tr><th>Cada mes (estimado conservador)</th>${J.months.map((m) => `<th class="r">${mname(m.ym)}</th>`).join('')}</tr></thead><tbody>
-    <tr><td>Unidades que vendes al mes<div class="pj-note">Promedio de tus cargos de envío WFS, con ${J.P.haircut}% menos por seguridad</div></td>${J.months.map(() => `<td class="r num">${Math.round(J.units)}</td>`).join('')}</tr>
-    <tr><td>Unidades devueltas al mes<div class="pj-note">Promedio de tus devoluciones (culpa tuya)</div></td>${J.months.map(() => `<td class="r num">${Math.round(J.unitsRet)}</td>`).join('')}</tr>
-    ${rowL('Ganancia de lo vendido', J.gross, 'Unidades que se quedan vendidas × (neto − costo)')}
-    ${rowL('− Costo de devoluciones', -J.retCost, `Cargos de devolución + envío WFS perdido + ${J.P.lossPct}% del costo por producto no vendible`)}
-    ${rowL('− Otros cargos de WFS', -J.other, 'Almacenaje, transporte a WFS y envío de devoluciones (promedio del settlement)')}
-    ${rowL('− Intereses de préstamos', -J.interest, J.interest ? '' : 'Pon la tasa de cada préstamo para contarlos')}
+    ${rowL('Ventas del mes', J.salesC, `${money(J.sales, 0)} al mes con ${J.P.haircut}% menos por seguridad`)}
+    ${rowL('− Ventas que se devuelven', -J.refundsM, `Lo que Walmart le reembolsa a tus clientes al mes: ${J.sellerRetN} devoluciones (culpa tuya) en ${J.rMonths.toFixed(1)} meses de tu reporte`)}
+    ${rowL(`Ganancia de lo vendido (margen ${J.margin.toFixed(1)}%)`, J.gross, 'Ventas que se quedan × margen. El margen ya descuenta el costo del producto, el WFS fee y el referral fee')}
+    ${rowL('− Costo de devoluciones', -J.retCost, `Por cada devolución: cargo de devolución + envío WFS que no te regresan + ${J.P.lossPct}% del costo, porque casi todo vuelve no vendible`)}
+    ${rowL('− Otros cargos de WFS', -J.other, `Almacenaje, transporte a WFS y envío de devoluciones: promedio de ${J.sMonths.toFixed(1)} meses de settlement`)}
+    ${rowL('− Intereses de préstamos', -J.interest, J.interest ? 'Saldo × tasa ÷ 12 de cada préstamo' : 'Pon la tasa de cada préstamo para contarlos')}
     ${rowL('= Ganancia neta del mes', J.net, '', true)}
     ${J.trend != null ? rowL('Según tu historial', J.trend, 'Cuánto subió tu capital por mes en tus registros. Se usa el menor de los dos.') : ''}
-    <tr class="pj-total"><td>Capital al cierre del mes<div class="pj-note">Incluye −${money(J.pendCut, 0)} por si ${J.P.pendCut}% de las devoluciones pendientes nunca se recupera</div></td>${J.months.map((m) => `<td class="r num">${money(m.capital, 0)}</td>`).join('')}</tr>
+    <tr class="pj-total"><td>Capital al cierre del mes<div class="pj-note">Capital de hoy + ganancia neta acumulada − ${money(J.pendCut, 0)} por si ${J.P.pendCut}% de las devoluciones pendientes nunca se recupera</div></td>${J.months.map((m) => `<td class="r num">${money(m.capital, 0)}</td>`).join('')}</tr>
   </tbody></table></div>`;
-
+  const big = (k, label, val, ph, suf, note) => `<div class="pj-in"><label for="fin-proj-${k}">${label}</label><div class="pj-in-row">${suf === '$' ? '<span>$</span>' : ''}<input id="fin-proj-${k}" data-proj="${k}" type="number" step="${suf === '$' ? 100 : 0.5}" min="0" value="${esc(val ?? '')}" placeholder="${ph}" ${dis}>${suf === '%' ? '<span>%</span>' : ''}</div><div class="pj-note">${note}</div></div>`;
+  const inputs = `<div class="pj-inputs">
+    ${big('sales', '1. ¿Cuánto vendes al mes?', J.P.sales, Math.round(J.autoSales), '$', J.userSales ? 'Usando tu número.' : `Escribe tu venta real. Tus reportes solo muestran ~${money(J.autoSales, 0)} al mes (${Math.round(J.autoUnits)} unidades con cargo de envío WFS entre mayo y agosto), por eso salía tan bajo.`)}
+    ${big('margin', '2. Margen después de costo y fees de Walmart', J.P.margin, J.autoMargin.toFixed(1), '%', J.userMargin ? 'Usando tu número. Borra el campo para volver al margen calculado con tus productos.' : `Calculado con la mezcla de productos que vendes (abajo)${J.missing.length ? `. Faltan costos de ${J.missing.length} productos: ponlos en Inventario para que sea exacto` : ''}.`)}
+  </div>
+  <details class="pj-mix"><summary>De dónde sale el margen: producto por producto</summary>
+    <div class="table-wrap" style="margin-top:8px"><table class="pj"><thead><tr><th>Producto</th><th class="r">Unidades al mes</th><th class="r">Precio</th><th class="r">WFS fee</th><th class="r">Referral</th><th class="r">Neto</th><th class="r">Costo</th><th class="r">Margen</th><th class="r">% de tus ventas</th></tr></thead>
+    <tbody>${J.mix.map((x) => `<tr><td>${esc(short(x.name, 48))}<div class="pj-note">${esc(x.sku)}</div></td><td class="r num">${x.u.toFixed(1)}</td><td class="r num">${money(x.price)}</td><td class="r num">${money(x.fee)}</td><td class="r num">${x.pct}%</td><td class="r num">${money(x.net)}</td>
+      <td class="r num">${x.cost ? money(x.cost) : '<span style="color:var(--warn);font-weight:600">falta</span>'}</td><td class="r num" style="font-weight:700">${x.margin != null ? x.margin.toFixed(1) + '%' : '—'}</td><td class="r num">${J.autoSales ? Math.round(x.sales / J.autoSales * 100) : 0}%</td></tr>`).join('')}
+    <tr class="pj-total"><td>Margen promedio (pesado por lo que más vendes)</td><td colspan="6"></td><td class="r num">${J.autoMargin.toFixed(1)}%</td><td></td></tr></tbody></table></div>
+    <p class="pj-note" style="margin:8px 0 0">Unidades al mes = cargos de envío WFS de cada producto en el settlement ÷ ${J.sMonths.toFixed(1)} meses. Margen = (neto − costo) ÷ precio. Neto = precio − WFS fee − referral fee. Precio, fees y costo salen de la pestaña Inventario.</p>
+  </details>`;
   const tbl = H.length ? `<details><summary class="label" style="cursor:pointer">Ver registros guardados (${H.length})</summary><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Fecha</th><th class="r">Capital</th><th class="r">Inventario</th><th class="r">Bancos</th><th class="r">Deudas</th><th></th></tr></thead>
     <tbody>${[...H].reverse().map((h) => `<tr><td class="num">${fmtDate(h.date)}</td><td class="r num">${money(h.capital)}</td><td class="r num">${h.inv != null ? money(h.inv, 0) : '—'}</td><td class="r num">${h.cash != null ? money(h.cash, 0) : '—'}</td><td class="r num">${h.debt != null ? money(h.debt, 0) : '—'}</td><td class="r">${Store.canWrite ? `<button class="x" data-histdel="${esc(h.id)}" aria-label="Borrar registro" style="border:0;background:none;color:var(--muted)">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>` : '';
   return `<section class="section" style="margin-top:32px">
     <div class="section-head"><h2>Proyección conservadora: próximos 3 meses</h2><span style="font-size:13px">Sale de tus ventas, devoluciones y costos reales</span></div>
     <div class="buckets">
       <div class="bucket"><span class="head">Capital hoy</span><span class="amt">${money(C.capital, 0)}</span><span class="sub">Inventario ${money(C.inv, 0)} al costo</span></div>
-      <div class="bucket"><span class="head">Ganancia neta estimada al mes</span><span class="amt" style="color:${J.monthly >= 0 ? 'var(--ok)' : 'var(--bad)'}">${money(J.monthly, 0)}</span><span class="sub">Después de devoluciones, fees e intereses</span></div>
+      <div class="bucket"><span class="head">Ganancia neta conservadora al mes</span><span class="amt" style="color:${J.monthly >= 0 ? 'var(--ok)' : 'var(--bad)'}">${money(J.monthly, 0)}</span><span class="sub">Después de devoluciones, fees e intereses</span></div>
       <div class="bucket"><span class="head">Capital a fin de ${monthLabel(last.ym)}</span><span class="amt">${money(last.capital, 0)}</span><span class="sub">${delta(C.capital, last.capital)} vs hoy</span></div>
     </div>
-    ${J.missing.length ? `<div class="findings"><div class="finding"><span class="stripe" style="background:var(--warn)"></span><div><h3>${J.missing.length} productos que vendes no tienen costo</h3><p>Vendes unas ${Math.round(J.missingUnits)} unidades al mes de ${J.missing.slice(0, 4).map((n) => short(n, 30)).join(', ')}${J.missing.length > 4 ? '…' : ''}, pero sin el costo no se pueden contar. La proyección sale más baja de lo real hasta que pongas el costo en Inventario.</p><div class="act"><button class="btn small" data-go="inventario">Poner costos</button></div></div></div></div>` : ''}
-    ${!J.hasSales ? `<div class="findings"><div class="finding"><span class="stripe" style="background:var(--warn)"></span><div><h3>Faltan datos de ventas</h3><p>Las ventas se estiman con los cargos de envío del settlement de WFS. Carga el settlement en Cargar reportes.</p></div></div></div>` : ''}
+    ${inputs}
     ${table}
     <div class="ledger-col" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
       <div class="lt">Qué tan conservadora es</div>
-      <div class="lrow">${pin('haircut', 'Vender', '% menos de lo normal')}${pin('lossPct', 'Perder', '% del costo en cada devolución')}${pin('pendCut', 'No recuperar', '% de devoluciones pendientes')}${pin('buyPct', 'Reponer', '% de lo que vendes')}</div>
-      <div class="pj-note">Ventas: ${J.sMonths.toFixed(1)} meses de settlement. Devoluciones: ${J.rMonths.toFixed(1)} meses. Con más reportes (settlement y pagos) la proyección se vuelve más exacta. "Reponer 100%" quiere decir que compras lo mismo que vendes y el inventario se mantiene.</div>
+      <div class="lrow">${pin('haircut', 'Vender', '% menos de lo que escribiste')}${pin('lossPct', 'Perder', '% del costo en cada devolución')}${pin('pendCut', 'No recuperar', '% de devoluciones pendientes')}${pin('buyPct', 'Reponer', '% de lo que vendes')}</div>
+      <div class="pj-note">"Reponer 100%" quiere decir que compras lo mismo que vendes y el inventario se mantiene.</div>
     </div>
     <div class="chart-wrap" id="capchart">
       <div class="row" style="gap:16px;font-size:12px;margin-bottom:6px">${Object.values(SER).map(([l, c]) => `<span style="display:inline-flex;gap:6px;align-items:center"><i class="dot" style="background:${c};border-radius:50%"></i>${l}</span>`).join('')}<span>Línea sólida: lo que ya pasó · punteada: proyección</span></div>
@@ -1796,10 +1822,10 @@ async function exportExcel() {
   const J = projection(C, invRows());
   section(wh, hr++, 'Proyección conservadora · próximos 3 meses', 6, TEAL);
   header(wh, hr++, ['Concepto (al mes)', '', '', ...J.months.map((m) => monthLabel(m.ym))], DARK);
-  const pRows = [['Unidades que vendes', J.units, INT], ['Unidades devueltas', J.unitsRet, INT], ['Ganancia de lo vendido', J.gross, MONEY], ['− Costo de devoluciones', -J.retCost, MONEY], ['− Otros cargos de WFS', -J.other, MONEY], ['− Intereses de préstamos', -J.interest, MONEY], ['= Ganancia neta del mes', J.monthly, MONEY]];
-  pRows.forEach(([l, v, f], k) => { wh.mergeCells(hr, 1, hr, 3); const row = wh.getRow(hr); row.getCell(1).value = l; J.months.forEach((m, q) => { row.getCell(4 + q).value = v; }); body(row, k % 2 === 1, { 4: f, 5: f, 6: f }); if (k === pRows.length - 1) totalRow(row); hr++; });
+  const pRows = [['Ventas del mes (conservador)', J.salesC, MONEY], ['− Ventas que se devuelven', -J.refundsM, MONEY], [`Ganancia de lo vendido (margen ${J.margin.toFixed(1)}%)`, J.gross, MONEY], ['− Costo de devoluciones', -J.retCost, MONEY], ['− Otros cargos de WFS', -J.other, MONEY], ['− Intereses de préstamos', -J.interest, MONEY], ['= Ganancia neta del mes', J.monthly, MONEY]];
+  pRows.forEach(([l, v, f], k) => { wh.mergeCells(hr, 1, hr, 3); const row = wh.getRow(hr); row.getCell(1).value = l; J.months.forEach((m, q) => { row.getCell(4 + q).value = v; }); body(row, k % 2 === 1, { 4: f, 5: f, 6: f }); if (k === pRows.length - 1) { totalRow(row); [4, 5, 6].forEach((c) => { row.getCell(c).numFmt = f; }); } hr++; });
   wh.mergeCells(hr, 1, hr, 3); { const row = wh.getRow(hr); row.getCell(1).value = 'Capital al cierre del mes'; J.months.forEach((m, q) => { row.getCell(4 + q).value = m.capital; }); totalRow(row); [4, 5, 6].forEach((c) => { row.getCell(c).numFmt = MONEY; row.getCell(c).fill = fill(TEAL); row.getCell(c).font = { bold: true, color: { argb: 'FFFFFFFF' } }; }); hr += 2; }
-  wh.getCell(`A${hr}`).value = `Supuestos: vender ${J.P.haircut}% menos, perder ${J.P.lossPct}% del costo en cada devolución, no recuperar ${J.P.pendCut}% de las devoluciones pendientes (−${money(J.pendCut, 0)}), reponer ${J.P.buyPct}% de lo vendido.`;
+  wh.getCell(`A${hr}`).value = `Supuestos: ventas de ${money(J.sales, 0)} al mes con margen de ${J.margin.toFixed(1)}%, vender ${J.P.haircut}% menos, perder ${J.P.lossPct}% del costo en cada devolución, no recuperar ${J.P.pendCut}% de las devoluciones pendientes (−${money(J.pendCut, 0)}), reponer ${J.P.buyPct}% de lo vendido.`;
   wh.getCell(`A${hr}`).font = { italic: true, color: { argb: 'FF3B4554' } };
 
   // ---------- Devoluciones por recuperar ----------
@@ -1954,7 +1980,8 @@ document.addEventListener('change', async (e) => {
   }
   if (t.dataset.proj) {
     const F = JSON.parse(JSON.stringify(Store.fin)); F.proj = { ...(F.proj || {}) };
-    F.proj[t.dataset.proj] = Math.max(0, Math.min(t.dataset.proj === 'buyPct' ? 300 : 100, parseFloat(t.value) || 0));
+    const k = t.dataset.proj, v = t.value.trim();
+    F.proj[k] = (k === 'sales' || k === 'margin') && v === '' ? null : Math.max(0, Math.min(k === 'sales' ? 1e8 : k === 'buyPct' ? 300 : 100, parseFloat(v) || 0));
     try { await Store.saveFin(F); } catch (err) { showToast('No se pudo guardar.'); }
     return;
   }
