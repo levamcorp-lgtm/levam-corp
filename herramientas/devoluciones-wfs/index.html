@@ -1175,7 +1175,7 @@ function vInventario() {
   const show = ui.invAll ? rows : rows.filter((r) => r.units > 0 || r.cost || r.manual);
   return `
   <section class="section" style="margin-top:0">
-  <div class="section-head"><h2>Inventario</h2><span class="muted" style="font-size:12px">${tot.units} unidades · ${money(tot.cost)} al costo · ${money(tot.net)} neto de venta</span></div>
+  <div class="section-head"><h2>Inventario</h2><div class="row"><span class="muted" style="font-size:13px">${tot.units} unidades · ${money(tot.cost)} al costo · ${money(tot.net)} neto de venta</span><button class="btn primary small" data-xlsx="1">Descargar Excel</button></div></div>
   <div class="locs">${loc.map((x) => `<div class="loc"><span class="head"><i class="dot" style="background:${x.c}"></i>${x.l}</span><span class="u">${x.u}</span><span class="sku">${money(x.cost, 0)} al costo · ${money(x.net, 0)} neto</span><span class="sku" style="font-family:var(--font-body)">${x.d}</span></div>`).join('')}</div>
   <div class="bar" role="img" aria-label="Inventario al costo por lugar">${loc.filter((x) => x.cost > 0).map((x) => `<span title="${x.l}: ${money(x.cost)}" style="width:${(x.cost / pTot * 100).toFixed(2)}%;background:${x.c}"></span>`).join('')}</div>
   <div class="buckets" style="margin-top:12px">
@@ -1258,6 +1258,7 @@ function vCapital(rows) {
   const aTot = parts.reduce((a, x) => a + x[1], 0) || 1, dTot = C.debt || 1;
   return `
   <section class="section" style="margin-top:0">
+    <div class="row" style="justify-content:flex-end"><button class="btn primary small" data-xlsx="1">Descargar Excel de inventario y capital</button></div>
     <div class="equation">
       <div class="eq-box"><span class="eq-l">Lo que tienes</span><span class="eq-v" style="color:var(--ok)">${money(C.assets)}</span></div>
       <span class="eq-op">−</span>
@@ -1595,6 +1596,184 @@ async function ingest(name, r) {
   ui.log[ui.log.length - 1] = { cls: 'ok', msg: `${name}: ${Core.LABEL[r.type]}, ${r.rows.length} filas (${m.added} nuevas).` };
 }
 
+// Excel completo (ExcelJS se carga solo cuando se pide)
+function loadScript(src) { return new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error('No cargó el generador de Excel.')); document.head.appendChild(el); }); }
+async function saveFile(filename, data, mime) {
+  let dl = null;
+  try { if (window.claude && window.claude.use) dl = await window.claude.use('downloads'); } catch (e) {}
+  if (dl) { try { await dl.save({ filename, data }); return true; } catch (e) { if (e.code !== 'declined') showToast('No se pudo descargar (' + (e.code || e.message) + ').'); return false; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type: mime })); a.download = filename; a.click(); return true;
+}
+async function exportExcel() {
+  if (!window.ExcelJS) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js').catch(() => loadScript('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'));
+  const X = window.ExcelJS, wb = new X.Workbook();
+  wb.creator = 'Cuadra'; wb.created = new Date();
+  const TEAL = 'FF0F766E', DARK = 'FF0F172A', SOFT = 'FFF6F8FA', LINE = 'FFE5E8EE', GREEN = 'FF23774A', RED = 'FFC0392B', AMBER = 'FFA8670F';
+  const MONEY = '"$"#,##0.00;[Red]-"$"#,##0.00', MONEY0 = '"$"#,##0;[Red]-"$"#,##0', PCT = '0%', INT = '#,##0';
+  const fill = (c) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: c } });
+  const border = { top: { style: 'thin', color: { argb: LINE } }, bottom: { style: 'thin', color: { argb: LINE } }, left: { style: 'thin', color: { argb: LINE } }, right: { style: 'thin', color: { argb: LINE } } };
+  const title = (ws, text, sub, span) => {
+    ws.mergeCells(1, 1, 1, span); ws.mergeCells(2, 1, 2, span);
+    Object.assign(ws.getCell(1, 1), { value: text, font: { name: 'Calibri', size: 18, bold: true, color: { argb: DARK } } });
+    Object.assign(ws.getCell(2, 1), { value: sub, font: { size: 11, color: { argb: 'FF3B4554' } } });
+    ws.getRow(1).height = 28;
+  };
+  const header = (ws, r, labels, color = TEAL) => {
+    const row = ws.getRow(r); row.values = labels; row.height = 30;
+    row.eachCell((c) => { c.fill = fill(color); c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; c.border = border; });
+  };
+  const section = (ws, r, text, span, color = DARK) => {
+    ws.mergeCells(r, 1, r, span);
+    const c = ws.getCell(r, 1); c.value = text; c.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } }; c.fill = fill(color); c.alignment = { vertical: 'middle', indent: 1 };
+    ws.getRow(r).height = 22;
+  };
+  const body = (row, zebra, fmts) => row.eachCell({ includeEmpty: true }, (c, i) => { c.border = border; if (zebra) c.fill = fill(SOFT); if (fmts && fmts[i]) c.numFmt = fmts[i]; c.alignment = { vertical: 'middle', ...(i > 1 ? {} : { wrapText: true }) }; });
+  const totalRow = (row) => row.eachCell({ includeEmpty: true }, (c) => { c.font = { bold: true, color: { argb: DARK } }; c.fill = fill('FFE6F2F0'); c.border = { ...border, top: { style: 'medium', color: { argb: TEAL } } }; });
+  const F = (formula, result) => ({ formula, result: result == null ? undefined : result });
+  const hoy = today(), empresa = Store.cfg.empresa || 'Mi empresa';
+
+  // ---------- Inventario ----------
+  const rows = invRows().filter((r) => r.units > 0 || r.cost || r.manual || r.wfs || r.inbound || r.wh);
+  const all = rows.length ? rows : invRows();
+  const wi = wb.addWorksheet('Inventario', { properties: { tabColor: { argb: TEAL } }, views: [{ state: 'frozen', xSplit: 1, ySplit: 4 }] });
+  const IH = ['Producto', 'SKU', 'GTIN', 'Costo', 'Precio venta', 'WFS fee', 'Referral %', 'Neto por unidad', 'Ganancia por unidad', 'Margen', 'En WFS', 'Camino a WFS', 'Warehouse', 'Devol. en casa', 'Devol. por llegar', 'Total unidades', 'Valor al costo', 'Valor neto de venta', 'Ganancia total'];
+  wi.columns = [44, 30, 16, 12, 13, 11, 11, 13, 13, 10, 10, 12, 12, 12, 13, 12, 15, 16, 15].map((w) => ({ width: w }));
+  title(wi, `Inventario · ${empresa}`, `Generado el ${fmtDate(hoy)} con Cuadra. Neto = precio − WFS fee − referral fee. Las celdas de Costo, Precio, fees y unidades se pueden editar: el resto se recalcula solo.`, IH.length);
+  header(wi, 4, IH);
+  const i0 = 5;
+  all.forEach((r, k) => {
+    const n = i0 + k, row = wi.getRow(n);
+    row.values = [r.name, r.sku || '', r.manual ? '' : r.id, r.cost, r.price, r.fee, r.pct / 100,
+      F(`E${n}-F${n}-E${n}*G${n}`, r.net), F(`IF(D${n}>0,H${n}-D${n},"")`, r.cost ? r.net - r.cost : ''), F(`IF(AND(D${n}>0,E${n}>0),I${n}/E${n},"")`, r.cost && r.price ? (r.net - r.cost) / r.price : ''),
+      r.wfs, r.inbound, r.wh, r.home, r.coming, F(`SUM(K${n}:O${n})`, r.units), F(`P${n}*D${n}`, r.valCost), F(`P${n}*H${n}`, r.valNet), F(`IF(D${n}>0,P${n}*(H${n}-D${n}),0)`, r.profit)];
+    body(row, k % 2 === 1, { 4: MONEY, 5: MONEY, 6: MONEY, 7: PCT, 8: MONEY, 9: MONEY, 10: PCT, 11: INT, 12: INT, 13: INT, 14: INT, 15: INT, 16: INT, 17: MONEY, 18: MONEY, 19: MONEY });
+    [4, 5, 6, 7, 11, 12, 13].forEach((c) => { row.getCell(c).font = { color: { argb: 'FF1D4ED8' } }; });
+    if (!r.cost) row.getCell(4).fill = fill('FFFFF4DB');
+  });
+  const iN = i0 + all.length - 1, it = iN + 1;
+  wi.getRow(it).values = ['TOTAL', '', '', '', '', '', '', '', '', '', ...['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S'].map((c) => F(`SUM(${c}${i0}:${c}${iN})`))];
+  totalRow(wi.getRow(it)); ['Q', 'R', 'S'].forEach((c) => { wi.getCell(`${c}${it}`).numFmt = MONEY; }); ['K', 'L', 'M', 'N', 'O', 'P'].forEach((c) => { wi.getCell(`${c}${it}`).numFmt = INT; });
+  wi.autoFilter = { from: 'A4', to: `S${iN}` };
+  // Resumen por lugar
+  const lr = it + 3;
+  section(wi, lr, 'Inventario por lugar', 4, TEAL);
+  header(wi, lr + 1, ['Lugar', 'Unidades', 'Valor al costo', 'Valor neto de venta'], DARK);
+  const LUG = [['En Walmart (WFS)', 'K'], ['Camino a Walmart', 'L'], ['En tu warehouse', 'M'], ['Devoluciones en casa', 'N'], ['Devoluciones por llegar', 'O']];
+  LUG.forEach(([l, c], k) => {
+    const n = lr + 2 + k, row = wi.getRow(n);
+    row.values = [l, F(`SUM(${c}${i0}:${c}${iN})`), F(`SUMPRODUCT(${c}${i0}:${c}${iN},D${i0}:D${iN})`), F(`SUMPRODUCT(${c}${i0}:${c}${iN},H${i0}:H${iN})`)];
+    body(row, k % 2 === 1, { 2: INT, 3: MONEY, 4: MONEY });
+  });
+  const lt = lr + 2 + LUG.length;
+  wi.getRow(lt).values = ['TOTAL', F(`SUM(B${lr + 2}:B${lt - 1})`), F(`SUM(C${lr + 2}:C${lt - 1})`), F(`SUM(D${lr + 2}:D${lt - 1})`)];
+  totalRow(wi.getRow(lt)); wi.getCell(`B${lt}`).numFmt = INT; wi.getCell(`C${lt}`).numFmt = MONEY; wi.getCell(`D${lt}`).numFmt = MONEY;
+  wi.getCell(`A${lt + 2}`).value = 'Azul = dato que escribes. Amarillo = falta el costo del producto.'; wi.getCell(`A${lt + 2}`).font = { italic: true, color: { argb: 'FF3B4554' } };
+
+  // ---------- Capital ----------
+  const C = capitalNow(invRows()), Fn = Store.fin;
+  const wc = wb.addWorksheet('Capital', { properties: { tabColor: { argb: GREEN } } });
+  wc.columns = [38, 18, 16, 16, 14, 14, 16].map((w) => ({ width: w }));
+  title(wc, `Capital de la empresa · ${empresa}`, `Al ${fmtDate(hoy)}. Capital real = lo que tienes − lo que debes. El inventario se cuenta al costo y sin las devoluciones por llegar (esas van en Devoluciones por recuperar).`, 7);
+  let r = 4;
+  section(wc, r++, 'LO QUE TIENES', 3, GREEN);
+  header(wc, r++, ['Concepto', 'Tipo', 'Monto'], DARK);
+  const aStart = r;
+  const addA = (concepto, tipo, v, formula) => { const row = wc.getRow(r); row.values = [concepto, tipo, formula ? F(formula, v) : v]; body(row, (r - aStart) % 2 === 1, { 3: MONEY }); r++; };
+  (Fn.cash || []).forEach((x) => addA(x.name || 'Cuenta', 'Banco / efectivo', +x.amount || 0));
+  addA('Inventario al costo', 'Inventario', C.inv, `SUMPRODUCT(Inventario!K${i0}:K${iN}+Inventario!L${i0}:L${iN}+Inventario!M${i0}:M${iN}+Inventario!N${i0}:N${iN},Inventario!D${i0}:D${iN})`);
+  addA('Devoluciones en camino a Walmart', 'Devoluciones', C.ret.camino);
+  addA('Devoluciones por llegarte', 'Devoluciones', C.ret.llegar);
+  addA('Devoluciones por reclamar', 'Devoluciones', C.ret.reclamar);
+  addA('Próximo depósito de Walmart', 'Walmart', C.pend);
+  (Fn.assets || []).forEach((x) => addA(x.name || 'Activo', 'Otro activo', +x.amount || 0));
+  const aEnd = r - 1, aTot = r;
+  wc.getRow(r).values = ['TOTAL LO QUE TIENES', '', F(`SUM(C${aStart}:C${aEnd})`, C.assets)]; totalRow(wc.getRow(r)); wc.getCell(`C${r}`).numFmt = MONEY; r += 2;
+
+  section(wc, r++, 'LO QUE DEBES · PRÉSTAMOS', 7, RED);
+  header(wc, r++, ['Acreedor', 'Monto original', 'Debes hoy', 'Pago mensual', 'Tasa %', '% pagado', 'Pagos restantes'], DARK);
+  const lStart = r;
+  (Fn.loans || []).forEach((x, k) => {
+    const row = wc.getRow(r);
+    row.values = [x.name || 'Préstamo', +x.original || 0, +x.balance || 0, +x.payment || 0, (+x.rate || 0) / 100, F(`IF(B${r}>0,(B${r}-C${r})/B${r},"")`), F(`IF(D${r}>0,ROUNDUP(C${r}/D${r},0),"")`)];
+    body(row, k % 2 === 1, { 2: MONEY, 3: MONEY, 4: MONEY, 5: '0.0%', 6: PCT, 7: INT }); r++;
+  });
+  if (r === lStart) { wc.getRow(r).values = ['(sin préstamos)']; r++; }
+  const lEnd = r - 1, lTot = r;
+  wc.getRow(r).values = ['TOTAL PRÉSTAMOS', F(`SUM(B${lStart}:B${lEnd})`), F(`SUM(C${lStart}:C${lEnd})`, C.loans), F(`SUM(D${lStart}:D${lEnd})`), '', F(`IF(B${r}>0,(B${r}-C${r})/B${r},"")`), ''];
+  totalRow(wc.getRow(r)); [2, 3, 4].forEach((c) => { wc.getCell(r, c).numFmt = MONEY; }); wc.getCell(r, 6).numFmt = PCT; r += 2;
+
+  section(wc, r++, 'LO QUE DEBES · TARJETAS Y LÍNEAS DE CRÉDITO', 7, RED);
+  header(wc, r++, ['Tarjeta / línea', 'Límite', 'Usado (debes)', 'Disponible', '% de uso'], DARK);
+  const cStart = r;
+  (Fn.credits || []).forEach((x, k) => {
+    const row = wc.getRow(r);
+    row.values = [x.name || 'Tarjeta', +x.limit || 0, +x.used || 0, F(`B${r}-C${r}`), F(`IF(B${r}>0,C${r}/B${r},"")`)];
+    body(row, k % 2 === 1, { 2: MONEY, 3: MONEY, 4: MONEY, 5: PCT });
+    const u = (+x.limit || 0) ? (+x.used || 0) / (+x.limit) : 0;
+    row.getCell(5).font = { bold: true, color: { argb: u > 0.7 ? RED : u > 0.3 ? AMBER : GREEN } }; r++;
+  });
+  if (r === cStart) { wc.getRow(r).values = ['(sin tarjetas)']; r++; }
+  const cEnd = r - 1, cTot = r;
+  wc.getRow(r).values = ['TOTAL TARJETAS', F(`SUM(B${cStart}:B${cEnd})`), F(`SUM(C${cStart}:C${cEnd})`, C.credit), F(`SUM(D${cStart}:D${cEnd})`), F(`IF(B${r}>0,C${r}/B${r},"")`)];
+  totalRow(wc.getRow(r)); [2, 3, 4].forEach((c) => { wc.getCell(r, c).numFmt = MONEY; }); wc.getCell(r, 5).numFmt = PCT; r += 2;
+
+  wc.getRow(r).values = ['TOTAL LO QUE DEBES', '', F(`C${lTot}+C${cTot}`, C.debt)]; totalRow(wc.getRow(r)); wc.getCell(`C${r}`).numFmt = MONEY; const dTot = r; r += 2;
+  wc.mergeCells(r, 1, r, 2);
+  const cap = wc.getRow(r); cap.values = ['CAPITAL REAL DE LA EMPRESA', '', F(`C${aTot}-C${dTot}`, C.capital)]; cap.height = 30;
+  cap.eachCell({ includeEmpty: true }, (c) => { c.fill = fill(TEAL); c.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }; c.alignment = { vertical: 'middle', indent: 1 }; });
+  wc.getCell(`C${r}`).numFmt = MONEY; r++;
+  const capN = wc.getRow(r); capN.values = ['Capital con inventario a precio de venta', '', C.capitalNet]; body(capN, false, { 3: MONEY }); r += 2;
+  wc.getCell(`A${r}`).value = `Pagas al mes en préstamos: ${money((Fn.loans || []).reduce((a, x) => a + (+x.payment || 0), 0))}`; wc.getCell(`A${r}`).font = { bold: true };
+
+  // ---------- Historial y proyección ----------
+  const wh = wb.addWorksheet('Historial', { properties: { tabColor: { argb: 'FF2A78D6' } }, views: [{ state: 'frozen', ySplit: 4 }] });
+  wh.columns = [16, 16, 16, 16, 16, 16].map((w) => ({ width: w }));
+  title(wh, 'Cómo va creciendo la empresa', 'Un registro por día en que actualizaste inventario o capital, más la proyección.', 6);
+  header(wh, 4, ['Fecha', 'Capital', 'Inventario', 'Bancos', 'Deudas', 'Variación capital']);
+  const H = [...Store.hist].filter((h) => h.date).sort((a, b) => a.date.localeCompare(b.date));
+  H.forEach((h, k) => {
+    const n = 5 + k, row = wh.getRow(n);
+    row.values = [new Date(h.date + 'T12:00:00'), h.capital, h.inv ?? '', h.cash ?? '', h.debt ?? '', k ? F(`B${n}-B${n - 1}`) : ''];
+    body(row, k % 2 === 1, { 1: 'dd mmm yyyy', 2: MONEY, 3: MONEY, 4: MONEY, 5: MONEY, 6: MONEY });
+  });
+  let hr = 5 + H.length + 1;
+  const plan = { month: '2026-12', profit: 0, buy: 0, sell: 0, ...(Fn.plan || {}) };
+  const months = Math.max(0, (Date.parse(monthEnd(plan.month)) - Date.parse(hoy)) / 864e5 / 30.44);
+  section(wh, hr++, `Proyección a ${monthLabel(plan.month)}`, 6, TEAL);
+  [['Capital hoy', C.capital, MONEY], ['Inventario hoy (al costo)', C.inv, MONEY], ['Ganancia neta al mes', +plan.profit || 0, MONEY], ['Compras de inventario al mes', +plan.buy || 0, MONEY], ['Inventario que vendes al mes (al costo)', +plan.sell || 0, MONEY], ['Meses hasta el cierre', Math.round(months * 10) / 10, '0.0']].forEach(([l, v, f], k) => {
+    wh.mergeCells(hr, 1, hr, 3); const row = wh.getRow(hr); row.getCell(1).value = l; row.getCell(4).value = v; body(row, k % 2 === 1, { 4: f }); hr++;
+  });
+  const p0 = hr - 6;
+  [['Capital proyectado', `D${p0}+D${p0 + 2}*D${p0 + 5}`], ['Inventario proyectado', `MAX(0,D${p0 + 1}+(D${p0 + 3}-D${p0 + 4})*D${p0 + 5})`]].forEach(([l, f]) => {
+    wh.mergeCells(hr, 1, hr, 3); const row = wh.getRow(hr); row.getCell(1).value = l; row.getCell(4).value = F(f); totalRow(row); row.getCell(4).numFmt = MONEY; hr++;
+  });
+
+  // ---------- Devoluciones por recuperar ----------
+  const wd = wb.addWorksheet('Devoluciones pendientes', { properties: { tabColor: { argb: AMBER } }, views: [{ state: 'frozen', ySplit: 4 }] });
+  wd.columns = [26, 22, 18, 30, 46, 13, 8, 48, 13].map((w) => ({ width: w }));
+  title(wd, 'Devoluciones por recuperar', 'O te llega el producto o Walmart te lo tiene que pagar. Monto = lo que Walmart le reembolsó al cliente.', 9);
+  header(wd, 4, ['Estado', 'RMA', 'Orden', 'SKU', 'Producto', 'Iniciada', 'Días', 'Dónde está', 'Monto']);
+  const TONE = { bad: 'FFFBE3E0', warn: 'FFFDF0D9', info: 'FFE3F2F0', ok: 'FFE2F3EA', grey: 'FFEEF1F5' };
+  const pend = M.returns.filter((x) => ['recuperar', 'confirmar', 'camino'].includes(x.bucket)).sort((a, b) => ['recuperar', 'confirmar', 'camino'].indexOf(a.bucket) - ['recuperar', 'confirmar', 'camino'].indexOf(b.bucket) || (b.days || 0) - (a.days || 0));
+  let dr = 5;
+  pend.forEach((x, k) => {
+    const row = wd.getRow(dr); const st = Core.STATE[x.state];
+    row.values = [st.label, x.rma, x.order, x.sku, x.item, new Date(x.date + 'T12:00:00'), x.days, where(x), x.refund];
+    body(row, false, { 6: 'dd mmm yyyy', 9: MONEY }); row.getCell(1).fill = fill(TONE[st.tone]); row.getCell(1).font = { bold: true }; dr++;
+  });
+  M.rtv.filter((v) => !v.ret && (!v.mark || v.mark.estado === 'no_llego')).forEach((v) => {
+    const row = wd.getRow(dr);
+    row.values = [v.mark ? 'No te llegó' : 'Enviada a ti · confirma', '', '', '', v.item, new Date(v.date + 'T12:00:00'), Math.round((Date.parse(hoy) - Date.parse(v.date)) / 864e5), `Caja ${v.trk || v.cart} (no está en el reporte de devoluciones; valor estimado)`, v.value];
+    body(row, false, { 6: 'dd mmm yyyy', 9: MONEY }); row.getCell(1).fill = fill(v.mark ? TONE.bad : TONE.warn); row.getCell(1).font = { bold: true }; dr++;
+  });
+  wd.getRow(dr).values = ['TOTAL', '', '', '', '', '', '', '', F(`SUM(I5:I${dr - 1})`)]; totalRow(wd.getRow(dr)); wd.getCell(`I${dr}`).numFmt = MONEY;
+  wd.autoFilter = { from: 'A4', to: `I${dr - 1}` };
+
+  [wi, wc, wh, wd].forEach((ws) => { ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }; });
+  const buf = await wb.xlsx.writeBuffer();
+  if (await saveFile(`Cuadra-inventario-y-capital-${hoy}.xlsx`, buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) showToast('Excel listo');
+}
+
 async function exportCSV() {
   const cols = ['Estado', 'RMA', 'Orden', 'SKU', 'GTIN', 'Producto', 'Iniciada', 'Dias', 'Motivo', 'Culpa', 'Donde esta', 'Reembolso', 'Cargo devolucion', 'Pagado por Walmart', 'Caso'];
   const lines = [cols.join(',')].concat(M.returns.map((r) => [Core.STATE[r.state].label, r.rma, r.order, r.sku, r.gtin, r.item, r.date, r.days, r.reason, r.fault, where(r), r.refund.toFixed(2), r.fee.toFixed(2), r.paid.toFixed(2), (r.mark && r.mark.caso) || '']
@@ -1640,7 +1819,7 @@ function openReturn(k) {
 
 // Eventos
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],[data-edit],[data-invall],[data-finadd],[data-findel],[data-histdel],#snap,#hist-add,#add-prod,#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
+  const t = e.target.closest('[data-tab],[data-go],[data-rf],[data-bf],[data-sf],[data-ret],[data-unit],[data-boxall],[data-prod],[data-close],[data-edit],[data-xlsx],[data-invall],[data-finadd],[data-findel],[data-histdel],#snap,#hist-add,#add-prod,#more,#export,#copy,#mark-claimed,#clear,#clear-yes,#clear-no');
   if (!t) return;
   if (t.dataset.close !== undefined) return $('#dlg').close();
   if (t.dataset.tab) return go(t.dataset.tab);
@@ -1662,6 +1841,7 @@ document.addEventListener('click', async (e) => {
     try { await Store.saveMarks(entries); showToast(st ? `${entries.length} productos marcados` : 'Caja sin marcar'); } catch (err) { showToast('No se pudo guardar (' + (err.code || err) + ').'); }
     return;
   }
+  if (t.dataset.xlsx) { t.disabled = true; const old = t.textContent; t.textContent = 'Preparando Excel…'; try { await exportExcel(); } finally { t.disabled = false; t.textContent = old; } return; }
   if (t.dataset.edit) { const k = t.dataset.edit === 'assets' ? 'editAssets' : 'editDebts'; ui[k] = !ui[k]; return render(); }
   if (t.dataset.invall) { ui.invAll = t.dataset.invall === '1'; return render(); }
   if (t.dataset.finadd) {
