@@ -311,14 +311,14 @@ dialog::backdrop { background: rgba(10, 14, 20, 0.45); }
 .edit-card { padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
 @media (max-width: 900px) { .equation { grid-template-columns: minmax(0, 1fr); } .eq-op { display: none; } .debt-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-.pj-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pj-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .pj-in { border: 1px solid rgba(15, 118, 110, 0.3); background: var(--accent-dim); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pj-in label { font-size: 14px; font-weight: 700; color: var(--fg); }
 .pj-in-row { display: flex; align-items: center; gap: 6px; font-size: 22px; font-weight: 700; }
 .pj-in-row input { font: inherit; font-size: 22px; font-weight: 700; width: 100%; max-width: 220px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
 .pj-in .pj-note { font-size: 12px; color: var(--fg); }
 .pj-mix summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--accent); }
-@media (max-width: 700px) { .pj-inputs { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1000px) { .pj-inputs { grid-template-columns: minmax(0, 1fr); } }
 .pj td { font-size: 13px; color: var(--fg); }
 .pj .pj-note { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .pj tr.pj-total td { font-weight: 700; background: var(--accent-dim); }
@@ -1347,7 +1347,7 @@ function monthEnd(ym) { const [y, m] = ym.split('-').map(Number); return new Dat
 function monthLabel(ym) { const [y, m] = ym.split('-').map(Number); return ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][m - 1] + ' ' + y; }
 // Proyección conservadora: sale de tus ventas reales (cargos de envío WFS en el settlement), tus devoluciones y tus costos
 function projection(C, rows) {
-  const P = { haircut: 15, lossPct: 40, pendCut: 15, buyPct: 100, sales: null, margin: null, ...(Store.fin.proj || {}) };
+  const P = { haircut: 15, lossPct: 40, pendCut: 15, buyPct: 100, sales: null, margin: null, returns: null, ...(Store.fin.proj || {}) };
   const span = (ds) => { const a = ds.filter(Boolean).sort(); return a.length ? Math.max(1, (Date.parse(a[a.length - 1]) - Date.parse(a[0])) / 864e5 / 30.44) : 1; };
   const S = M.settle, ff = S.filter((x) => x.type === 'FulfillmentFee' && x.gtin);
   const sMonths = span(S.map((x) => x.date)), rMonths = span(M.returns.map((x) => x.date));
@@ -1370,8 +1370,16 @@ function projection(C, rows) {
   const salesC = sales * (1 - P.haircut / 100);
   // Devoluciones (culpa tuya) por mes, de tu reporte de devoluciones
   const sellerRet = M.returns.filter((r) => r.fault !== 'WFS');
-  const refundsM = sellerRet.reduce((a, r) => a + r.refund, 0) / rMonths;
-  const retCost = sellerRet.reduce((a, r) => { const p = byG.get(r.gtin); const cost = p && p.cost ? p.cost : r.refund * (1 - margin / 100); return a + (r.fee || 0) + (p ? p.fee : 0) + cost * P.lossPct / 100; }, 0) / rMonths;
+  // Mes típico = mediana de los meses del reporte, para que un mes raro (como octubre) no infle la proyección
+  const byM = {}; for (const r of sellerRet) { const k = (r.date || '').slice(0, 7); if (k) byM[k] = (byM[k] || 0) + r.refund; }
+  const mKeys = Object.keys(byM).sort(), mVals = (mKeys.length > 2 ? mKeys.slice(1) : mKeys).map((k) => byM[k]).sort((a, b) => a - b);
+  const typical = mVals.length ? (mVals.length % 2 ? mVals[(mVals.length - 1) / 2] : (mVals[mVals.length / 2 - 1] + mVals[mVals.length / 2]) / 2) : 0;
+  const avgRet = sellerRet.reduce((a, r) => a + r.refund, 0) / rMonths;
+  const userReturns = P.returns != null && P.returns !== '';
+  const refundsM = userReturns ? +P.returns : typical;
+  const retScale = avgRet ? refundsM / avgRet : 0;
+  const retCost = sellerRet.reduce((a, r) => { const p = byG.get(r.gtin); const cost = p && p.cost ? p.cost : r.refund * (1 - margin / 100); return a + (r.fee || 0) + (p ? p.fee : 0) + cost * P.lossPct / 100; }, 0) / rMonths * retScale;
+  const retMonths = mKeys.map((k) => ({ ym: k, amt: byM[k], odd: typical && byM[k] > typical * 2 }));
   const gross = Math.max(0, salesC - refundsM) * margin / 100;
   const other = S.filter((x) => ['StorageFee', 'InboundTransportationFee', 'RC_InventoryRTVFee'].includes(x.type)).reduce((a, x) => a + x.net, 0) / sMonths;
   const interest = (Store.fin.loans || []).reduce((a, l) => a + (+l.balance || 0) * (+l.rate || 0) / 100 / 12, 0);
@@ -1388,7 +1396,7 @@ function projection(C, rows) {
     const m = (Date.parse(end) - Date.parse(today())) / 864e5 / 30.44;
     months.push({ end, ym: end.slice(0, 7), m, capital: C.capital - pendCut + monthly * m, inv: Math.max(0, C.inv + (cogs * P.buyPct / 100 - cogs) * m) });
   }
-  return { P, sMonths, rMonths, sales, salesC, margin, autoSales, autoMargin, autoUnits, userSales, userMargin, mix, sellerRetN: sellerRet.length,
+  return { P, sMonths, rMonths, sales, salesC, margin, autoSales, autoMargin, autoUnits, userSales, userMargin, mix, sellerRetN: sellerRet.length, typical, userReturns, retMonths,
     refundsM, gross, retCost, other, interest, net, trend, monthly, pendCut, months, missing, hasSales: ff.length > 0 };
 }
 
@@ -1437,7 +1445,7 @@ function vGrowth(C) {
   const rowL = (l, v, note, strong) => `<tr${strong ? ' class="pj-total"' : ''}><td>${l}${note ? `<div class="pj-note">${note}</div>` : ''}</td>${J.months.map(() => `<td class="r num">${v == null ? '' : money(v, 0)}</td>`).join('')}</tr>`;
   const table = `<div class="table-wrap"><table class="pj"><thead><tr><th>Cada mes (estimado conservador)</th>${J.months.map((m) => `<th class="r">${mname(m.ym)}</th>`).join('')}</tr></thead><tbody>
     ${rowL('Ventas del mes', J.salesC, `${money(J.sales, 0)} al mes con ${J.P.haircut}% menos por seguridad`)}
-    ${rowL('− Ventas que se devuelven', -J.refundsM, `Lo que Walmart le reembolsa a tus clientes al mes: ${J.sellerRetN} devoluciones (culpa tuya) en ${J.rMonths.toFixed(1)} meses de tu reporte`)}
+    ${rowL('− Ventas que se devuelven', -J.refundsM, J.userReturns ? 'Tu número de devoluciones al mes' : 'Un mes típico de devoluciones (culpa tuya), sin dejar que un mes raro infle la cuenta')}
     ${rowL(`Ganancia de lo vendido (margen ${J.margin.toFixed(1)}%)`, J.gross, 'Ventas que se quedan × margen. El margen ya descuenta el costo del producto, el WFS fee y el referral fee')}
     ${rowL('− Costo de devoluciones', -J.retCost, `Por cada devolución: cargo de devolución + envío WFS que no te regresan + ${J.P.lossPct}% del costo, porque casi todo vuelve no vendible`)}
     ${rowL('− Otros cargos de WFS', -J.other, `Almacenaje, transporte a WFS y envío de devoluciones: promedio de ${J.sMonths.toFixed(1)} meses de settlement`)}
@@ -1447,9 +1455,11 @@ function vGrowth(C) {
     <tr class="pj-total"><td>Capital al cierre del mes<div class="pj-note">Capital de hoy + ganancia neta acumulada − ${money(J.pendCut, 0)} por si ${J.P.pendCut}% de las devoluciones pendientes nunca se recupera</div></td>${J.months.map((m) => `<td class="r num">${money(m.capital, 0)}</td>`).join('')}</tr>
   </tbody></table></div>`;
   const big = (k, label, val, ph, suf, note) => `<div class="pj-in"><label for="fin-proj-${k}">${label}</label><div class="pj-in-row">${suf === '$' ? '<span>$</span>' : ''}<input id="fin-proj-${k}" data-proj="${k}" type="number" step="${suf === '$' ? 100 : 0.5}" min="0" value="${esc(val ?? '')}" placeholder="${ph}" ${dis}>${suf === '%' ? '<span>%</span>' : ''}</div><div class="pj-note">${note}</div></div>`;
+  const mn = (ym) => ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+ym.slice(5, 7) - 1];
   const inputs = `<div class="pj-inputs">
     ${big('sales', '1. ¿Cuánto vendes al mes?', J.P.sales, Math.round(J.autoSales), '$', J.userSales ? 'Usando tu número.' : `Escribe tu venta real. Tus reportes solo muestran ~${money(J.autoSales, 0)} al mes (${Math.round(J.autoUnits)} unidades con cargo de envío WFS entre mayo y agosto), por eso salía tan bajo.`)}
     ${big('margin', '2. Margen después de costo y fees de Walmart', J.P.margin, J.autoMargin.toFixed(1), '%', J.userMargin ? 'Usando tu número. Borra el campo para volver al margen calculado con tus productos.' : `Calculado con la mezcla de productos que vendes (abajo)${J.missing.length ? `. Faltan costos de ${J.missing.length} productos: ponlos en Inventario para que sea exacto` : ''}.`)}
+    ${big('returns', '3. ¿Cuánto te devuelven en un mes normal?', J.P.returns, Math.round(J.typical), '$', `${J.userReturns ? 'Usando tu número. ' : ''}Tus meses: ${J.retMonths.map((m) => `${mn(m.ym)} <b${m.odd ? ' style="color:var(--bad)"' : ''}>${money(m.amt, 0)}</b>${m.odd ? ' (fuera de lo normal)' : ''}`).join(' · ')}. Mes típico: <b>${money(J.typical, 0)}</b>${J.retMonths.length ? ` (${mn(J.retMonths[0].ym)} empezó a mitad de mes y no se cuenta)` : ''}.`)}
   </div>
   <details class="pj-mix"><summary>De dónde sale el margen: producto por producto</summary>
     <div class="table-wrap" style="margin-top:8px"><table class="pj"><thead><tr><th>Producto</th><th class="r">Unidades al mes</th><th class="r">Precio</th><th class="r">WFS fee</th><th class="r">Referral</th><th class="r">Neto</th><th class="r">Costo</th><th class="r">Margen</th><th class="r">% de tus ventas</th></tr></thead>
@@ -1981,7 +1991,7 @@ document.addEventListener('change', async (e) => {
   if (t.dataset.proj) {
     const F = JSON.parse(JSON.stringify(Store.fin)); F.proj = { ...(F.proj || {}) };
     const k = t.dataset.proj, v = t.value.trim();
-    F.proj[k] = (k === 'sales' || k === 'margin') && v === '' ? null : Math.max(0, Math.min(k === 'sales' ? 1e8 : k === 'buyPct' ? 300 : 100, parseFloat(v) || 0));
+    F.proj[k] = (k === 'sales' || k === 'margin' || k === 'returns') && v === '' ? null : Math.max(0, Math.min(k === 'sales' || k === 'returns' ? 1e8 : k === 'buyPct' ? 300 : 100, parseFloat(v) || 0));
     try { await Store.saveFin(F); } catch (err) { showToast('No se pudo guardar.'); }
     return;
   }
